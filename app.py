@@ -2,15 +2,13 @@ import streamlit as st
 import io
 import json
 import os
-import xml.etree.ElementTree as ET
-import zipfile
 
 # 1. CONFIGURATION DE LA PAGE
 st.set_page_config(page_title="Centre de Ressources Éditoriales", page_icon="📚", layout="wide")
 
 FICHIER_SAUVEGARDE = "revues_config.json"
 
-# Liste de toutes vos revues extraites de l'image
+# Liste complète de vos revues extraites de votre image précédente
 LISTE_ACRONYMES = [
     "cagri", "geotech", "jbio", "tpe", "bsgf", "limn", "nss", "parasite", 
     "pmed", "radiopro", "aacus", "alr", "mfreview", "ocl", "rees", "stet", 
@@ -20,10 +18,8 @@ LISTE_ACRONYMES = [
     "esaim-ps", "mmnp", "rairo-ro", "rairo-ita", "medsci", "jomos", "ppsy"
 ]
 
-# Génération des données de départ pour toutes les revues
 DONNEES_PAR_DEFAUT = {}
 for acro in LISTE_ACRONYMES:
-    # Quelques préréglages automatiques selon les standards habituels de vos revues
     style_cit = "APA" if acro in ["pmed", "nss", "ppsy", "medsci"] else "IEEE"
     is_twocol = True if acro in ["jeos", "meca", "photon", "rairo-ro"] else False
     
@@ -32,7 +28,7 @@ for acro in LISTE_ACRONYMES:
         "taille_titre": "16" if style_cit == "APA" else "18",
         "couleur": "#d62728" if style_cit == "APA" else "#1f77b4",
         "marges": "2.5cm",
-        "header": f"Journal of {acro.upper()} - Research Framework",
+        "header": f"{acro.upper()}",
         "id_line_format": "Article Number" if style_cit == "APA" else "Pagination",
         "style_citation": style_cit,
         "open_access": True,
@@ -46,7 +42,7 @@ def charger_donnees():
             with open(FICHIER_SAUVEGARDE, "r", encoding="utf-8") as f: 
                 return json.load(f)
         except Exception: 
-                return DONNEES_PAR_DEFAUT
+            return DONNEES_PAR_DEFAUT
     return DONNEES_PAR_DEFAUT
 
 def sauvegarder_donnees(donnees):
@@ -56,158 +52,132 @@ def sauvegarder_donnees(donnees):
 if "revues" not in st.session_state:
     st.session_state.revues = charger_donnees()
 
-# 2. GENERATEUR NATIF DE FICHIER .DOCX VALIDÉ MICROSOFT WORD
-def generer_instructions_docx_vrai(nom_revue, config, options_article):
-    """Génère un vrai fichier .docx (OpenXML) fonctionnel et compatible toutes plateformes."""
-    id_format = "Volume(Fascicule), Pages, Année" if config["id_line_format"] == "Pagination" else "Volume, Numéro d'article, Année"
+# 2. GENERATEUR DE FICHIER WORD (.DOC) REPRENANT EXACTEMENT VOTRE DOCUMENT SOURCE
+def generer_instructions_word_html(nom_revue, config, options_article):
+    """Génère un document Word (.doc) basé sur un format HTML parfaitement interprété par MS Word."""
     
-    # Création de la structure XML minimale pour un document Word standard
-    document_xml = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-    <w:document xmlns:w="http://openxmlformats.org">
-        <w:body>
-            <w:p>
-                <w:pPr><w:pStyle w:val="Heading1"/></w:pPr>
-                <w:r><w:t>GUIDE D'INSTRUCTIONS TYPESETTER : {nom_revue.upper()}</w:t></w:r>
-            </w:p>
-            <w:p><w:r><w:t>Ce document récapitule les règles d'harmonisation de la charte graphique.</w:t></w:r></w:p>
-            <w:p/>
-            <w:p><w:r><w:b/><w:t>1. REGLES DE STYLE GENERALES :</w:t></w:r></w:p>
-            <w:p><w:r><w:t>- Police principale : {config['police']} (Titres : {config['taille_titre']}pt, Couleur : {config['couleur']})</w:t></w:r></w:p>
-            <w:p><w:r><w:t>- Marges : {config['marges']}</w:t></w:r></w:p>
-            <w:p><w:r><w:t>- Structure : {'Deux colonnes' if config['deux_colonnes'] else 'Une seule colonne standard'}</w:t></w:r></w:p>
-            <w:p><w:r><w:t>- IDLine requis : Format basé sur la {config['id_line_format']} ({id_format})</w:t></w:r></w:p>
-            <w:p/>
-            <w:p><w:r><w:b/><w:t>2. CONSIGNES DE VIGILANCE TEXTUELLE :</w:t></w:r></w:p>
-            <w:p><w:r><w:t>- Termes Latins : Les mots comme "et al.", "in situ", "in vitro", "versus" doivent impérativement rester en Romain (Pas d'italique).</w:t></w:r></w:p>
-            <w:p><w:r><w:t>- Unités de Mesure : Toujours insérer un espace insécable entre la valeur et l'unité (ex: 5 L, 10 min).</w:t></w:r></w:p>
-            <w:p/>
-            <w:p><w:r><w:b/><w:t>3. ORDRE OBLIGATOIRE DES SECTIONS FINALES :</w:t></w:r></w:p>
-            <w:p><w:r><w:t>Le typesetter doit structurer la fin de l'article précisément dans cet ordre :</w:t></w:r></w:p>
-            <w:p><w:r><w:t>1. Acknowledgments (Remerciements)</w:t></w:r></w:p>
-            <w:p><w:r><w:t>2. Funding (Financements) -> {options_article['funding_text']}</w:t></w:r></w:p>
-            <w:p><w:r><w:t>3. Conflicts of Interest -> {options_article['conflict_text']}</w:t></w:r></w:p>
-            <w:p><w:r><w:t>4. Data Availability Statement -> {options_article['data_phrasing']}</w:t></w:r></w:p>
-            <w:p><w:r><w:t>5. Supplementary Material</w:t></w:r></w:p>
-            <w:p><w:r><w:t>6. References (Style bibliographique : {config['style_citation']})</w:t></w:r></w:p>
-            <w:p><w:r><w:t>7. Citation Box</w:t></w:r></w:p>
-            <w:p><w:r><w:t>8. Appendices / Annexes (En taille 9pt)</w:t></w:r></w:p>
-            {"<w:p><w:r><w:t>9. S2O Box (Journal sous pavillon Subscribe to Open)</w:t></w:r></w:p>" if options_article['is_s2o'] else ""}
-            <w:p/>
-            <w:p><w:r><w:b/><w:t>4. CONSIGNES BIBLIOGRAPHIQUES ({config['style_citation']}) :</w:t></w:r></w:p>
-            <w:p><w:r><w:t>- Les titres des livres et des revues ne doivent pas prendre de majuscules (sauf la première lettre).</w:t></w:r></w:p>
-            <w:p><w:r><w:t>- Aucun nom de revue ne doit commencer par l'article "The".</w:t></w:r></w:p>
-        </w:body>
-    </w:document>
-    """
-    
-    # Création de l'archive ZIP mimant la structure officielle d'un fichier .docx Microsoft Word
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as docx:
-        docx.writestr('document.xml', document_xml)
-        docx.writestr('[Content_Types].xml', """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-        <Types xmlns="http://openxmlformats.org">
-            <Default Extension="xml" ContentType="application/xml"/>
-            <Override PartName="/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-        </Types>""")
-    buffer.seek(0)
-    return buffer.getvalue()
-
-# 3. GENERATEUR DU EXEMPLE VISUEL (.TEX)
-def generer_visuel_latex(nom_revue, config, options_article):
-    """Génère le code LaTeX complet qui servira d'exemple visuel de l'article."""
-    hex_color = config["couleur"].lstrip('#')
-    r, g, b = tuple(int(hex_color[i:i+2], 16)/255 for i in (0, 2, 4))
-    col_mode = "\\usepackage[twocolumn]{geometry}" if config["deux_colonnes"] else ""
-    sec_mode = "" if config["sections_numerotees"] else "\\setcounter{secnumdepth}{0}"
-    
-    id_line = f"{config['header']}, Vol. 22(1), 78-82, 2026" if config["id_line_format"] == "Pagination" else f"{config['header']}, Vol. 22, 62, 2026"
-    running_title = f"Author et al.: {id_line}"
+    # Construction dynamique des exemples selon la configuration de la revue
+    if config["id_line_format"] == "Pagination":
+        ex_idline = f"{config['header']}, 22(1), 78-82, 2026"
+        ex_running = f"S. Mathy et al.: {config['header']}, 22(1), 78-82, 2026"
+    else:
+        ex_idline = f"{config['header']}, 22, 62, 2026"
+        ex_running = f"S. Mathy et al.: {config['header']}, 22, 62, 2026"
 
     if config["style_citation"] == "IEEE":
-        citation_box = "Cite this article as: P. Nom, \\\"Title of the article,\\\" " + config['header'] + ", vol. 22, pp. 78-82, 2026."
+        ex_citation = f'G. Liu, K. Y. Lee, and H. F. Jordan, "TDM and TWDM de Bruijn networks and shufflenets for optical communications," IEEE Trans. Comp., vol. 46, pp. 695-701, June 1997.'
     else:
-        citation_box = "Cite this article as: Nom, P. (2026). \\\"Title of the article.\\\" " + config['header'] + ", 22(1), 78-82."
+        ex_citation = f'Weinstein, J. (2009). "The market in Plato\'s Republic." Classical Philology, 104(4), 439-458.'
 
-    mention_special = "\\noindent\\small\\textit{Special Issue / Guest Editors: Dr. A, Dr. B}\\hfill" if options_article['is_special'] else ""
-    mention_oa = "\\small\\textbf{(Open Access Logo)}" if config['open_access'] else ""
-    note_equal = "\\footnotetext{$\\star$ These authors contributed equally.}" if options_article['equal_contrib'] else ""
-    mention_s2o = "\\vspace{0.3cm}\\noindent\\textbf{S2O Box:} Ce journal est publié selon le modèle Subscribe to Open." if options_article['is_s2o'] else ""
+    html_content = f"""
+    <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://w3.org">
+    <head>
+        <meta charset="utf-8">
+        <style>
+            body {{ font-family: Arial, sans-serif; font-size: 10.5pt; line-height: 1.4; }}
+            h1 {{ font-size: 16pt; color: {config['couleur']}; border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-top: 20px; }}
+            h2 {{ font-size: 12pt; font-weight: bold; margin-top: 15px; margin-bottom: 5px; }}
+            .table-style {{ border-collapse: collapse; width: 100%; margin-top: 10px; }}
+            .table-style td, .table-style th {{ border: 1px solid #000; padding: 6px; text-align: left; font-size: 10pt; }}
+            .table-style th {{ background-color: #f2f2f2; }}
+            .example {{ background-color: #f9f9f9; border-left: 3px solid #ccc; padding: 5px 10px; margin: 5px 0; font-style: italic; }}
+            .highlight {{ color: #d62728; font-weight: bold; }}
+        </style>
+    </head>
+    <body>
+        <div style="font-size: 9pt; text-align: right; margin-bottom: 20px; color: #555;">
+            General Copy Editing procedure<br>Last update: 26/08/2026
+        </div>
 
-    template = f"""\\documentclass[10pt, a4paper]{{article}}
-\\usepackage[utf8]{{inputenc}}
-\\usepackage[margin={config['marges']}]{{geometry}}
-{col_mode}
-\\usepackage{{fancyhdr}}
-\\usepackage{{xcolor}}
-\\usepackage{{titlesec}}
-\\usepackage{{lipsum}}
+        <h1>General Copy Editing Procedure — {nom_revue.upper()}</h1>
 
-{sec_mode}
+        <h2>IDLine</h2>
+        {"<p><b>If there are article numbers:</b><br>[Journal shortened name], Volume, Article number ([Year])</p><div class='example'>Example: " + ex_idline + "</div>" if config["id_line_format"] == "Article Number" else "<p><b>If there is a pagination:</b><br>[Journal shortened name], Volume(Issue), Page numbers([Year])</p><div class='example'>Example: " + ex_idline + "</div>"}
 
-\\definecolor{{couleurRevue}}{{rgb}}{{{r:.2f}, {g:.2f}, {b:.2f}}}
-\\titleformat{{\\section}}{{\\normalfont\\large\\bfseries\\color{{couleurRevue}}}}{{\\thesection}}{{1em}}{{}}
+        <h2>Font Copyright</h2>
+        <p><b>If the copyright is to the journal:</b><br>The Author(s), Published by EDP Sciences, Year<br><div class='example'>Example: The Author(s), Published by EDP Sciences, 2026</div></p>
+        <p><b>If the copyright is to the authors:</b><br>[Name of the authors], Published by EDP Sciences, [Year]<br><div class='example'>Example: J.M. Bertho and M. Bourguignon, Published by EDP Sciences, 2026</div></p>
+        <p>• <i>If there is one author:</i> [Initial + Surname], Published by EDP Sciences, [Year]<br>
+        • <i>If there are two authors:</i> [Initial + Surname and Initial + Surname], Published by EDP Sciences, [Year]<br>
+        • <i>If there are three or more authors:</i> [Initial + Surname et al.], Published by EDP Sciences, [Year]</p>
 
-\\pagestyle{{fancy}}
-\\fancyhf{{}}
-\\fancyhead[C]{{\\small {running_title}}}
-\\fancyfoot[L]{{\\footnotesize {id_line}}}
-\\fancyfoot[R]{{\\thepage}}
+        <h2>Open Access</h2>
+        <p><b>If the journal is in Open Access:</b><br>There must always be :<br>
+        - At the top of the page : the <b>Open Access</b> logo<br>
+        - At the bottom of the page : the mention <i>"This is an Open Access article distributed under the terms of the Creative Commons Attribution License (https://creativecommons.org), which permits unrestricted use, distribution, and reproduction in any medium, provided the original work is properly cited."</i></p>
 
-\\begin{{document}}
+        <h2>Special Issue</h2>
+        <p>If the article belongs to a Special Issue or a Topical Issue, the name of the Special Issue should appear above the banner, like so:<br>
+        <div class='example'>Special Issue/Topical Issue - [Name of the Special Issue/Topical Issue]<br>Guest Editors: [Names of the Guest Editors]</div>
+        The font should be the same as that of the main text.</p>
 
-{mention_special}
-{mention_oa}
-\\vspace{{0.5cm}}
+        <h2>Article type</h2>
+        <p>The article type is displayed on the banner, on the left. It must be written identically to what is in SAGA. Please respect the uppercase/lowercase letters.</p>
 
-\\begin{{center}}
-    {{\\Large\\bfseries\\color{{couleurRevue}} Titre de l'Article d'Exemple pour {nom_revue} \\\\}}
-    \\vspace{{0.4cm}}
-    {{\\large Prénom Nom$^{{1,*}}$ \\\\}}
-    \\vspace{{0.2cm}}
-    {{\\footnotesize 1 Nom du Laboratoire, Ville, Pays (Sans point final)}}
-\\end{{center}}
+        <h2>Title</h2>
+        <p>No capital in the title (only at the beginning of the first word of the title, for proper nouns, name of species).</p>
 
-\\footnotetext{{* Corresponding author: contact@revue.com}}
-{note_equal}
+        <h2>Translated title</h2>
+        <p>If there is a translated title: No capital in the title (only at the beginning of the first word of the title, for proper nouns, name of species). The translated title is set in bold at the beginning of the translated abstract.</p>
 
-\\vspace{{0.4cm}}
-\\noindent\\textbf{{Abstract – }} \\lipsum[1-2]
+        <h2>List of authors</h2>
+        <p>Full first name + full last name. The names are separated by commas, except for the last one, which is preceded by <b>and</b>. There is no full stop at the end of the list of authors.<br>
+        <div class='example'>Example: Yi-Ping Wang1, Shi-Chuang Jiang1,2,* and Dong Sun1</div></p>
 
-\\vspace{{0.2cm}}
-\\noindent\\textbf{{Keywords: }} science / exemple / gabarit
+        <h2>List of affiliations</h2>
+        <p>The list must be numbered if there is more than one affiliation. There must be at least one address for each author. The city and country must be included in the address. <b>No full stop</b> at the end of the addresses and after acronyms (example: USA, PR China, UK, PO Box).<br>
+        <div class='example'>Example: 1 School of Optoelectronic and Communication Engineering, Xiamen University of Technology, Xiamen 361024, PR China</div></p>
 
-\\section{{1. Introduction}}
-Ceci est un exemple visuel du rendu de l'article. Le texte respecte la police de la revue. 
-Les expressions latines comme et al. ou in situ restent en romain. Les unités possèdent un espace insécable (ex: 12~L).
+        <h2>Corresponding author</h2>
+        <p>Put the symbol <b>*</b> after the name of the corresponding author. Add this footnote:<br>
+        <div class='example'>* Corresponding author: [e-mail of the corresponding author]</div></p>
 
-\\section{{Acknowledgments}}
-Remerciements à l'équipe éditoriale.
+        <h2>Equal contribution</h2>
+        <p>When two authors contributed equally to the manuscript, add the symbol <b>&star;</b> and the footnote: <i>these authors contributed equally</i>.</p>
 
-\\section{{Funding}}
-{options_article['funding_text']}
+        <h2>Abstract</h2>
+        <p>The abstract is preceded by <b>Abstract</b> in bold.</p>
 
-\\section{{Conflicts of Interest}}
-{options_article['conflict_text']}
+        <h2>Keywords</h2>
+        <p><b>Keywords:</b> keyword 1 / keyword 2 / keyword 3<br>
+        <b>Keywords:</b> is in bold with an uppercase letter at the start. The keywords are all lowercase.</p>
 
-\\section{{Data Availability Statement}}
-{options_article['data_phrasing']}
+        <h2>Translated abstract</h2>
+        <p>The translated abstract is preceded by <b>Résumé</b> (or translated title) in bold.</p>
 
-\\section{{References}}
-\\footnotesize D. Sarunyagate, *Lasers*. New York: McGraw-Hill, 1996.\\\\ G. Weinstein, ''The market in Plato's Republic,'' *Classical Philology*, vol. 104, pp. 439-458, 2009.
+        <h2>Translated keywords</h2>
+        <p><b>Mots-clés :</b> mot-clé 1 / mot-clé 2<br>
+        <b>Mots-clés :</b> is in bold with an uppercase letter at the start. The keywords are all lowercase.</p>
 
-\\vspace{{0.5cm}}
-\\noindent\\fbox{{
-\\begin{{minipage}}{{\\linewidth}}
-\\bfseries{{Citation Box:}}\\\\
-{citation_box}
-\\end{{minipage}}
-}}
+        <h2>Running title</h2>
+        <p>Centered and at the top of every page.<br>
+        {"<b>If there are article numbers:</b> [Initial + surname of the first author] et al.: [Journal shortened name], Volume, Article number ([Year])<br><div class='example'>Example: " + ex_running + "</div>" if config["id_line_format"] == "Article Number" else "<b>If there is a pagination:</b> [Initial + surname of the first author] et al.: [Journal shortened name], Volume(Issue), Page numbers([Year])<br><div class='example'>Example: " + ex_running + "</div>"}</p>
 
-{mention_s2o}
+        <h2>Sections</h2>
+        {"<p><b>If the sections are numbered:</b> The sections are numbered in Arabic numerals.<br><div class='example'>Example:<br>1 Introduction<br>2 Theory</div></p>" if config["sections_numerotees"] else "<p><b>If the sections are not numbered:</b> The sections are not numbered.</p>"}
 
-\\end{{document}}
-"""
-    return template.encode('utf-8')
+        <h2>Main text</h2>
+        <p>The main text of the article should be typeset in font size 10.</p>
+
+        <h2>Columns</h2>
+        <p>The main text should be typeset into <b>{'two columns' if config['deux_colonnes'] else 'one column'}</b>.</p>
+
+        <h2>Latin terms</h2>
+        <p>Latin terms must appear in <b>roman font</b> (e.g., i.e., cf., et al., in situ, versus, vs., ab initio, a priori, via, in vitro, ad hoc, ...); unbreakable spaces within.</p>
+
+        <h2>Abbreviations</h2>
+        <p>1. The standard rules for abbreviation must be followed.<br>
+        2. When the authors use an abbreviation for the first time, they need to present both the spelled-out version and the short form.<br>
+        3. In the spelled-out version, capital letter for the initial letter of each word is only needed for the names of organization or person.</p>
+
+        <h2>Symbol, units, equations, functions, and numbers</h2>
+        <p>All measurements, data and symbols (variables) should be given using international norms (ISO) and should always be written in <i>italic</i>. SI units should be used: the unit "litre" should be abbreviated as "L" (also mL, etc.), minutes as min, degrees as °C or K. All units should be typeset in roman. <b>There must have a space between a number and its unit.</b><br>
+        Equations that are referred to in the text should be numbered with the number on the right-hand side and should be numbered sequentially throughout the text (i.e., (1), (2), (3)). There is no punctuation at the end.</p>
+
+        <h2>Figures</h2>
+        <p>All figures must be cited within the text. Figures should be numbered sequentially as Figure 1, Figure 2, etc. They are referred to in the text as Figure 1, Figure 2, (Fig. 1) etc. Captions should be placed <b>below</b> the figure. The caption is mandatory. There must be a full-stop at the end.</p>
+
+        <h2>Tables</h2>
 # 4. INTERFACE GRAPHIQUE STREAMLIT
 st.title("📚 Centre de Ressources Éditoriales")
 st.caption("Génération automatisée des paquets d'instructions et des maquettes visuelles.")
@@ -238,9 +208,11 @@ with onglet_typesetter:
         conflict_text = "The authors declare the following conflicts..." if has_conflict else "The authors declare that they have no competing interests to report."
         
         data_phrasing = st.selectbox("Data Availability Statement :", [
-            "The research data associated with this article are available on request from the authors",
+            "The research data available on request from the authors",
             "The research data associated with this article are included within the article",
-            "This article has no associated data generated and/or analyzed"
+            "This article has no associated data generated and/or analyzed",
+            "The research data associated with this article are available in [Name of public data repository], under the reference [DOI or other data identifier]",
+            "Data associated with this article cannot be disclosed due to legal/ethical/other reason."
         ])
         
         options_article = {
@@ -248,7 +220,7 @@ with onglet_typesetter:
             "funding_text": funding_text, "conflict_text": conflict_text, "data_phrasing": data_phrasing
         }
         
-        # --- NOUVEAUTÉ : PANNEAU DE PREVISUALISATION DIRECTE ---
+        # Panneau de prévisualisation directe à l'écran
         st.write("---")
         st.subheader("👀 Visualisation directe des règles (sans téléchargement)")
         
@@ -256,31 +228,31 @@ with onglet_typesetter:
         with expander_rules:
             col_preview1, col_preview2 = st.columns(2)
             with col_preview1:
-                st.markdown(f"**Charte Graphique :**")
-                st.markdown(f"- **Police :** {cfg['police']}")
+                st.markdown("**Charte Graphique :**")
+                st.markdown(f"- **Police demandée :** {cfg['police']}")
                 st.markdown(f"- **Taille des titres :** {cfg['taille_titre']} pt")
                 st.markdown(f"- **Marges :** {cfg['marges']}")
                 st.markdown(f"- **Mise en page :** {'Deux colonnes' if cfg['deux_colonnes'] else 'Une seule colonne standard'}")
             with col_preview2:
-                st.markdown(f"**Règles Éditoriales :**")
+                st.markdown("**Règles Éditoriales :**")
                 st.markdown(f"- **Style bibliographique :** `{cfg['style_citation']}`")
                 st.markdown(f"- **Ligne d'identification :** {cfg['id_line_format']}")
                 st.markdown(f"- **Mention de copyright :** {'Open Access requis' if cfg['open_access'] else 'Standard'}")
             
-            st.warning("⚠️ **Rappels Typographiques Impératifs :** Les termes latins (*et al.*, *in situ*) restent en Romain. Espace insécable obligatoire avant les unités de mesure (ex: 5 L). Pas de majuscules superflues dans la bibliographie.")
+            st.warning("⚠️ **Rappels Typographiques Source :** Les termes latins (*et al.*, *in situ*) doivent rester en Romain (pas d'italique). Espace insécable obligatoire avant les unités de mesure (ex: 5 L, 25 °C).")
 
         st.write("---")
         st.subheader("📥 Documents à exporter")
         
         col_btn1, col_btn2 = st.columns(2)
         
-        # Téléchargement du vrai .docx généré via la structure OpenXML corrigée
-        data_docx = generer_instructions_docx_vrai(revue_choisie, cfg, options_article)
+        # Téléchargement du .doc HTML encapsulé (sans blocage Word)
+        data_docx = generer_instructions_word_html(revue_choisie, cfg, options_article)
         col_btn1.download_button(
-            label="📄 Télécharger la Liste d'Instructions (.docx)",
+            label="📄 Télécharger la Liste d'Instructions (.doc / Word)",
             data=data_docx,
-            file_name=f"instructions_typesetter_{revue_choisie.lower().replace(' ', '_')}.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            file_name=f"instructions_typesetter_{revue_choisie.lower().replace(' ', '_')}.doc",
+            mime="application/msword"
         )
         
         data_tex = generer_visuel_latex(revue_choisie, cfg, options_article)
@@ -290,7 +262,6 @@ with onglet_typesetter:
             file_name=f"exemple_visuel_{revue_choisie.lower().replace(' ', '_')}.tex",
             mime="text/plain"
         )
-
 with onglet_editeur:
     st.header("Édition des chartes graphiques par Revue")
     action = st.radio("Action :", ["Modifier une revue existante", "Créer une nouvelle revue"])
