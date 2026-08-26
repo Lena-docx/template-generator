@@ -8,7 +8,7 @@ st.set_page_config(page_title="Centre de Ressources Éditoriales", page_icon="�
 
 FICHIER_SAUVEGARDE = "revues_config.json"
 
-# Liste complète de vos revues extraites de votre image précédente
+# Liste complète de vos 45 revues
 LISTE_ACRONYMES = [
     "cagri", "geotech", "jbio", "tpe", "bsgf", "limn", "nss", "parasite", 
     "pmed", "radiopro", "aacus", "alr", "mfreview", "ocl", "rees", "stet", 
@@ -51,133 +51,156 @@ def sauvegarder_donnees(donnees):
 
 if "revues" not in st.session_state:
     st.session_state.revues = charger_donnees()
-
-# 2. GENERATEUR DE FICHIER WORD (.DOC) REPRENANT EXACTEMENT VOTRE DOCUMENT SOURCE
+# 2. GENERATEUR DE GUIDE COMPATIBLE MICROSOFT WORD
 def generer_instructions_word_html(nom_revue, config, options_article):
-    """Génère un document Word (.doc) basé sur un format HTML parfaitement interprété par MS Word."""
+    """Génère un document Word (.doc) via une structure de dictionnaire pour éviter les coupures de texte."""
+    ex_idline = f"{config['header']}, 22(1), 78-82, 2026" if config["id_line_format"] == "Pagination" else f"{config['header']}, 22, 62, 2026"
+    ex_running = f"S. Mathy et al.: {config['header']}, 22(1), 78-82, 2026" if config["id_line_format"] == "Pagination" else f"S. Mathy et al.: {config['header']}, 22, 62, 2026"
+    ex_citation = 'G. Liu, ... "TDM networks...", IEEE Trans. Comp., 1997.' if config["style_citation"] == "IEEE" else 'Weinstein, J. (2009). "The market..." Classical Philology.'
+
+    # Entête HTML propre et stylisée pour Word
+    html = f"""<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://w3.org">
+    <head><meta charset="utf-8"><style>
+        body {{ font-family: Arial, sans-serif; font-size: 10.5pt; line-height: 1.4; }}
+        h1 {{ font-size: 16pt; color: {config['couleur']}; border-bottom: 2px solid {config['couleur']}; padding-bottom: 5px; }}
+        h2 {{ font-size: 12pt; font-weight: bold; color: #333; margin-top: 15px; margin-bottom: 5px; }}
+        .example {{ background-color: #f4f4f4; border-left: 4px solid #ccc; padding: 5px 10px; margin: 5px 0; font-style: italic; }}
+    </style></head><body>
+    <div style="text-align: right; font-size: 9pt; color: #666;">General Copy Editing procedure<br>Last update: 26/08/2026</div>
+    <h1>General Copy Editing Procedure — {nom_revue.upper()}</h1>"""
+
+    # Liste structurée des rubriques issues de votre document de référence
+    rubriques = [
+        ("IDLine", f"Format requis basé sur la <b>{config['id_line_format']}</b>.", f"Example: {ex_idline}"),
+        ("Font Copyright", "If copyright to journal: <i>The Author(s), Published by EDP Sciences, 2026</i>.<br>If copyright to authors: <i>[Names], Published by EDP Sciences, 2026</i>.<br>1 author: [I. Surname] / 2 authors: [I. Surname and I. Surname] / 3+ authors: [I. Surname et al.]", "Example: J.M. Bertho and M. Bourguignon, Published by EDP Sciences, 2026"),
+        ("Open Access", f"<b>Statut de la revue : {'Activé' if config['open_access'] else 'Désactivé'}</b>.<br>Si actif : Logo Open Access obligatoire en haut de page. Mention légale Creative Commons CC-BY 4.0 obligatoire en pied de page.", "distributed under the terms of the Creative Commons Attribution License..."),
+        ("Special Issue", "Si l'article appartient à un numéro spécial, faire figurer au-dessus du bandeau :<br><i>Special Issue/Topical Issue - [Nom du numéro]<br>Guest Editors: [Noms]</i>", "The font should be the same as that of the main text."),
+        ("Article type", "Affiché sur le bandeau à gauche. Doit correspondre strictement au type saisi dans SAGA (respecter la casse).", ""),
+        ("Title / Translated title", "Pas de majuscules dans le titre (uniquement au premier mot, aux noms propres et espèces). Le titre traduit se place en gras au début du résumé traduit.", ""),
+        ("List of authors", "Format : Prénom complet + Nom complet. Séparés par des virgules, sauf le dernier précédé de 'and'. Pas de point final.", "Example: Yi-Ping Wang1, Shi-Chuang Jiang1,2,* and Dong Sun1"),
+        ("List of affiliations", "Numérotée si plusieurs affiliations. Au moins une adresse par auteur avec ville et pays. Pas de point final à la fin de la ligne ou des acronymes (USA, UK).", "Example: 1 School of Optoelectronic Engineering, Xiamen, PR China"),
+        ("Corresponding author / Equal contribution", "Ajouter l'astérisque (*) après le nom et la note de bas de page avec l'e-mail.<br>Si contribution égale, ajouter le symbole (★) et la mention 'these authors contributed equally'.", "Example footnote: * Corresponding author: contact@email.com"),
+        ("Abstract / Keywords", "Précédé de <b>Abstract</b> en gras. Mots-clés introduits par <b>Keywords:</b> en gras, le reste entièrement en minuscules, séparés par des slashes (/).", "Keywords: optics / laser / computing"),
+        ("Translated abstract / keywords", "Précédé de <b>Résumé</b> en gras. Mots-clés introduits par <b>Mots-clés :</b> en gras, séparés par des slashes (/).", "Mots-clés : optique / laser"),
+        ("Running title", f"Centré en haut de chaque page. Format généré pour cette revue :", f"Example: {ex_running}"),
+        ("Sections", f"<b>Mise en règle :</b> {'Numbered in Arabic numerals (e.g., 1 Introduction)' if config['sections_numerotees'] else 'The sections are not numbered.'}", ""),
+        ("Main text / Columns", f"Texte principal réglé en taille 10 pt. Structure configurée sur <b>{'deux colonnes' if config['deux_colonnes'] else 'une seule colonne standard'}</b>.", ""),
+        ("Latin terms", "Doivent impérativement apparaître en police <b>Romaine</b> (pas d'italique) : <i>et al., in situ, in vitro, versus, vs., cf., i.e.</i>. Utiliser des espaces insécables à l'intérieur.", ""),
+        ("Abbreviations", "Suivre les règles standards. Présenter la forme développée + la forme abrégée lors de la première apparition. Majuscule uniquement pour les noms de personnes ou d'organisations.", ""),
+        ("Symbols, units & equations", "Variables et symboles en <i>italique</i> (normes ISO). Unités en romain (L, mL, min, °C, K) avec un espace obligatoire après le nombre (ex: 5 L). Équations numérotées séquentiellement à droite (1), sans ponctuation finale.", ""),
+        ("Figures & Tables", "Figures : numérotées (Figure 1, Fig. 1), légende obligatoire <b>en dessous</b> se finissant par un point.<br>Tables : numérotées (Table 1, Tab. 1), légende obligatoire <b>au-dessus</b> se finissant par un point. Lignes verticales interdites.", ""),
+        ("Final sections", f"Placées juste après la conclusion et avant les références. Typographie réglée en taille 9 pt.<br>Ordre obligatoire : Acknowledgments / Funding (<i>{options_article['funding_text']}</i>) / Conflicts of interest (<i>{options_article['conflict_text']}</i>) / Data availability statement (<i>{options_article['data_phrasing']}</i>) / Author contribution statement.", ""),
+        ("Supplementary material", "Placé après les déclarations finales et avant les références.", "The supplementary material of this article is available at..."),
+        ("References / Citation box", f"Toutes les références doivent être numérotées et correspondre au texte. Pas de majuscules aux titres de livres/revues. Aucun nom de revue ne commence par 'The'.<br>Format de la boîte de citation ({config['style_citation']}) :", f"Template: {ex_citation}"),
+        ("Appendices & S2O Box", f"Appendices en taille 9 pt placés après les références.<br><b>S2O Box :</b> {'À insérer tout à la fin de l\'article (Modèle Subscribe to Open actif)' if options_article['is_s2o'] else 'Non applicable sur cette revue.'}", "")
+    ]
+
+    # Construction automatique du corps HTML
+    for titre, texte, exemple in rubriques:
+        html += f"<h2>{titre}</h2><p>{texte}</p>"
+        if exemple:
+            html += f"<div class='example'>{exemple}</div>"
+
+    html += "</body></html>"
+    return html.encode('utf-8')
+# 3. GENERATEUR DU EXEMPLE VISUEL (.TEX)
+def generer_visuel_latex(nom_revue, config, options_article):
+    """Génère le code LaTeX d'illustration visuelle sans imbrication de f-strings complexes."""
+    hex_color = config["couleur"].lstrip('#')
+    r, g, b = tuple(int(hex_color[i:i+2], 16)/255 for i in (0, 2, 4))
+    col_mode = "\\usepackage[twocolumn]{geometry}" if config["deux_colonnes"] else ""
+    sec_mode = "" if config["sections_numerotees"] else "\\setcounter{secnumdepth}{0}"
     
-    # Construction dynamique des exemples selon la configuration de la revue
-    if config["id_line_format"] == "Pagination":
-        ex_idline = f"{config['header']}, 22(1), 78-82, 2026"
-        ex_running = f"S. Mathy et al.: {config['header']}, 22(1), 78-82, 2026"
-    else:
-        ex_idline = f"{config['header']}, 22, 62, 2026"
-        ex_running = f"S. Mathy et al.: {config['header']}, 22, 62, 2026"
+    id_line = f"{config['header']}, Vol. 22(1), 78-82, 2026" if config["id_line_format"] == "Pagination" else f"{config['header']}, Vol. 22, 62, 2026"
+    running_title = f"Author et al.: {id_line}"
 
     if config["style_citation"] == "IEEE":
-        ex_citation = f'G. Liu, K. Y. Lee, and H. F. Jordan, "TDM and TWDM de Bruijn networks and shufflenets for optical communications," IEEE Trans. Comp., vol. 46, pp. 695-701, June 1997.'
+        citation_box = "Cite this article as: P. Nom, \\\"Title of the article,\\\" " + config['header'] + ", vol. 22, pp. 78-82, 2026."
     else:
-        ex_citation = f'Weinstein, J. (2009). "The market in Plato\'s Republic." Classical Philology, 104(4), 439-458.'
+        citation_box = "Cite this article as: Nom, P. (2026). \\\"Title of the article.\\\" " + config['header'] + ", 22(1), 78-82."
 
-    html_content = f"""
-    <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://w3.org">
-    <head>
-        <meta charset="utf-8">
-        <style>
-            body {{ font-family: Arial, sans-serif; font-size: 10.5pt; line-height: 1.4; }}
-            h1 {{ font-size: 16pt; color: {config['couleur']}; border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-top: 20px; }}
-            h2 {{ font-size: 12pt; font-weight: bold; margin-top: 15px; margin-bottom: 5px; }}
-            .table-style {{ border-collapse: collapse; width: 100%; margin-top: 10px; }}
-            .table-style td, .table-style th {{ border: 1px solid #000; padding: 6px; text-align: left; font-size: 10pt; }}
-            .table-style th {{ background-color: #f2f2f2; }}
-            .example {{ background-color: #f9f9f9; border-left: 3px solid #ccc; padding: 5px 10px; margin: 5px 0; font-style: italic; }}
-            .highlight {{ color: #d62728; font-weight: bold; }}
-        </style>
-    </head>
-    <body>
-        <div style="font-size: 9pt; text-align: right; margin-bottom: 20px; color: #555;">
-            General Copy Editing procedure<br>Last update: 26/08/2026
-        </div>
+    mention_special = "\\noindent\\small\\textit{Special Issue / Guest Editors: Dr. A, Dr. B}\\hfill" if options_article['is_special'] else ""
+    mention_oa = "\\small\\textbf{(Open Access Logo)}" if config['open_access'] else ""
+    note_equal = "\\footnotetext{$\\star$ These authors contributed equally.}" if options_article['equal_contrib'] else ""
+    mention_s2o = "\\vspace{0.3cm}\\noindent\\textbf{S2O Box:} Ce journal est publié selon le modèle Subscribe to Open." if options_article['is_s2o'] else ""
 
-        <h1>General Copy Editing Procedure — {nom_revue.upper()}</h1>
+    template = f"""\\documentclass[10pt, a4paper]{{article}}
+\\usepackage[utf8]{{inputenc}}
+\\usepackage[margin={config['marges']}]{{geometry}}
+{col_mode}
+\\usepackage{{fancyhdr}}
+\\usepackage{{xcolor}}
+\\usepackage{{titlesec}}
+\\usepackage{{lipsum}}
 
-        <h2>IDLine</h2>
-        {"<p><b>If there are article numbers:</b><br>[Journal shortened name], Volume, Article number ([Year])</p><div class='example'>Example: " + ex_idline + "</div>" if config["id_line_format"] == "Article Number" else "<p><b>If there is a pagination:</b><br>[Journal shortened name], Volume(Issue), Page numbers([Year])</p><div class='example'>Example: " + ex_idline + "</div>"}
+{sec_mode}
 
-        <h2>Font Copyright</h2>
-        <p><b>If the copyright is to the journal:</b><br>The Author(s), Published by EDP Sciences, Year<br><div class='example'>Example: The Author(s), Published by EDP Sciences, 2026</div></p>
-        <p><b>If the copyright is to the authors:</b><br>[Name of the authors], Published by EDP Sciences, [Year]<br><div class='example'>Example: J.M. Bertho and M. Bourguignon, Published by EDP Sciences, 2026</div></p>
-        <p>• <i>If there is one author:</i> [Initial + Surname], Published by EDP Sciences, [Year]<br>
-        • <i>If there are two authors:</i> [Initial + Surname and Initial + Surname], Published by EDP Sciences, [Year]<br>
-        • <i>If there are three or more authors:</i> [Initial + Surname et al.], Published by EDP Sciences, [Year]</p>
+\\definecolor{{couleurRevue}}{{rgb}}{{{r:.2f}, {g:.2f}, {b:.2f}}}
+\\titleformat{{\\section}}{{\\normalfont\\large\\bfseries\\color{{couleurRevue}}}}{{\\thesection}}{{1em}}{{}}
 
-        <h2>Open Access</h2>
-        <p><b>If the journal is in Open Access:</b><br>There must always be :<br>
-        - At the top of the page : the <b>Open Access</b> logo<br>
-        - At the bottom of the page : the mention <i>"This is an Open Access article distributed under the terms of the Creative Commons Attribution License (https://creativecommons.org), which permits unrestricted use, distribution, and reproduction in any medium, provided the original work is properly cited."</i></p>
+\\pagestyle{{fancy}}
+\\fancyhf{{}}
+\\fancyhead[C]{{\\small {running_title}}}
+\\fancyfoot[L]{{\\footnotesize {id_line}}}
+\\fancyfoot[R]{{\\thepage}}
 
-        <h2>Special Issue</h2>
-        <p>If the article belongs to a Special Issue or a Topical Issue, the name of the Special Issue should appear above the banner, like so:<br>
-        <div class='example'>Special Issue/Topical Issue - [Name of the Special Issue/Topical Issue]<br>Guest Editors: [Names of the Guest Editors]</div>
-        The font should be the same as that of the main text.</p>
+\\begin{{document}}
 
-        <h2>Article type</h2>
-        <p>The article type is displayed on the banner, on the left. It must be written identically to what is in SAGA. Please respect the uppercase/lowercase letters.</p>
+{mention_special}
+{mention_oa}
+\\vspace{{0.5cm}}
 
-        <h2>Title</h2>
-        <p>No capital in the title (only at the beginning of the first word of the title, for proper nouns, name of species).</p>
+\\begin{{center}}
+    {{\\Large\\bfseries\\color{{couleurRevue}} Titre de l'Article d'Exemple pour {nom_revue} \\\\}}
+    \\vspace{{0.4cm}}
+    {{\\large Prénom Nom$^{{1,*}}$ \\\\}}
+    \\vspace{{0.2cm}}
+    {{\\footnotesize 1 Nom du Laboratoire, Ville, Pays}}
+\\end{{center}}
 
-        <h2>Translated title</h2>
-        <p>If there is a translated title: No capital in the title (only at the beginning of the first word of the title, for proper nouns, name of species). The translated title is set in bold at the beginning of the translated abstract.</p>
+\\footnotetext{{* Corresponding author: contact@revue.com}}
+{note_equal}
 
-        <h2>List of authors</h2>
-        <p>Full first name + full last name. The names are separated by commas, except for the last one, which is preceded by <b>and</b>. There is no full stop at the end of the list of authors.<br>
-        <div class='example'>Example: Yi-Ping Wang1, Shi-Chuang Jiang1,2,* and Dong Sun1</div></p>
+\\vspace{{0.4cm}}
+\\noindent\\textbf{{Abstract – }} \\lipsum[1-2]
 
-        <h2>List of affiliations</h2>
-        <p>The list must be numbered if there is more than one affiliation. There must be at least one address for each author. The city and country must be included in the address. <b>No full stop</b> at the end of the addresses and after acronyms (example: USA, PR China, UK, PO Box).<br>
-        <div class='example'>Example: 1 School of Optoelectronic and Communication Engineering, Xiamen University of Technology, Xiamen 361024, PR China</div></p>
+\\vspace{{0.2cm}}
+\\noindent\\textbf{{Keywords: }} science / exemple / gabarit
 
-        <h2>Corresponding author</h2>
-        <p>Put the symbol <b>*</b> after the name of the corresponding author. Add this footnote:<br>
-        <div class='example'>* Corresponding author: [e-mail of the corresponding author]</div></p>
+\\section{{1. Introduction}}
+Ceci est un exemple visuel du rendu de l'article. Le texte respecte la police de la revue. 
+Les expressions latines comme et al. ou in situ restent en romain. Les unités possèdent un espace insécable (ex: 12~L).
 
-        <h2>Equal contribution</h2>
-        <p>When two authors contributed equally to the manuscript, add the symbol <b>&star;</b> and the footnote: <i>these authors contributed equally</i>.</p>
+\\section{{Acknowledgments}}
+Remerciements à l'équipe éditoriale.
 
-        <h2>Abstract</h2>
-        <p>The abstract is preceded by <b>Abstract</b> in bold.</p>
+\\section{{Funding}}
+{options_article['funding_text']}
 
-        <h2>Keywords</h2>
-        <p><b>Keywords:</b> keyword 1 / keyword 2 / keyword 3<br>
-        <b>Keywords:</b> is in bold with an uppercase letter at the start. The keywords are all lowercase.</p>
+\\section{{Conflicts of Interest}}
+{options_article['conflict_text']}
 
-        <h2>Translated abstract</h2>
-        <p>The translated abstract is preceded by <b>Résumé</b> (or translated title) in bold.</p>
+\\section{{Data Availability Statement}}
+{options_article['data_phrasing']}
 
-        <h2>Translated keywords</h2>
-        <p><b>Mots-clés :</b> mot-clé 1 / mot-clé 2<br>
-        <b>Mots-clés :</b> is in bold with an uppercase letter at the start. The keywords are all lowercase.</p>
+\\section{{References}}
+\\footnotesize 1. D. Sarunyagate, Lasers. New York: McGraw-Hill, 1996.
 
-        <h2>Running title</h2>
-        <p>Centered and at the top of every page.<br>
-        {"<b>If there are article numbers:</b> [Initial + surname of the first author] et al.: [Journal shortened name], Volume, Article number ([Year])<br><div class='example'>Example: " + ex_running + "</div>" if config["id_line_format"] == "Article Number" else "<b>If there is a pagination:</b> [Initial + surname of the first author] et al.: [Journal shortened name], Volume(Issue), Page numbers([Year])<br><div class='example'>Example: " + ex_running + "</div>"}</p>
+\\vspace{{0.5cm}}
+\\noindent\\fbox{{
+\\begin{{minipage}}{{\\linewidth}}
+\\bfseries{{Citation Box:}}\\\\
+{citation_box}
+\\end{{minipage}}
+}}
 
-        <h2>Sections</h2>
-        {"<p><b>If the sections are numbered:</b> The sections are numbered in Arabic numerals.<br><div class='example'>Example:<br>1 Introduction<br>2 Theory</div></p>" if config["sections_numerotees"] else "<p><b>If the sections are not numbered:</b> The sections are not numbered.</p>"}
+{mention_s2o}
 
-        <h2>Main text</h2>
-        <p>The main text of the article should be typeset in font size 10.</p>
+\\end{{document}}
+"""
+    return template.encode('utf-8')
 
-        <h2>Columns</h2>
-        <p>The main text should be typeset into <b>{'two columns' if config['deux_colonnes'] else 'one column'}</b>.</p>
 
-        <h2>Latin terms</h2>
-        <p>Latin terms must appear in <b>roman font</b> (e.g., i.e., cf., et al., in situ, versus, vs., ab initio, a priori, via, in vitro, ad hoc, ...); unbreakable spaces within.</p>
-
-        <h2>Abbreviations</h2>
-        <p>1. The standard rules for abbreviation must be followed.<br>
-        2. When the authors use an abbreviation for the first time, they need to present both the spelled-out version and the short form.<br>
-        3. In the spelled-out version, capital letter for the initial letter of each word is only needed for the names of organization or person.</p>
-
-        <h2>Symbol, units, equations, functions, and numbers</h2>
-        <p>All measurements, data and symbols (variables) should be given using international norms (ISO) and should always be written in <i>italic</i>. SI units should be used: the unit "litre" should be abbreviated as "L" (also mL, etc.), minutes as min, degrees as °C or K. All units should be typeset in roman. <b>There must have a space between a number and its unit.</b><br>
-        Equations that are referred to in the text should be numbered with the number on the right-hand side and should be numbered sequentially throughout the text (i.e., (1), (2), (3)). There is no punctuation at the end.</p>
-
-        <h2>Figures</h2>
-        <p>All figures must be cited within the text. Figures should be numbered sequentially as Figure 1, Figure 2, etc. They are referred to in the text as Figure 1, Figure 2, (Fig. 1) etc. Captions should be placed <b>below</b> the figure. The caption is mandatory. There must be a full-stop at the end.</p>
-
-        <h2>Tables</h2>
 # 4. INTERFACE GRAPHIQUE STREAMLIT
 st.title("📚 Centre de Ressources Éditoriales")
 st.caption("Génération automatisée des paquets d'instructions et des maquettes visuelles.")
@@ -188,7 +211,6 @@ with onglet_typesetter:
     st.header("Paquet de Publication par Revue")
     st.write("Sélectionnez la revue et configurez l'article pour exporter ou consulter vos documents.")
     
-    # Menu déroulant affichant l'intégralité de vos acronymes (de cagri à ppsy)
     revue_choisie = st.selectbox("Sélectionner la revue :", list(st.session_state.revues.keys()))
     
     if revue_choisie:
@@ -220,7 +242,6 @@ with onglet_typesetter:
             "funding_text": funding_text, "conflict_text": conflict_text, "data_phrasing": data_phrasing
         }
         
-        # Panneau de prévisualisation directe à l'écran
         st.write("---")
         st.subheader("👀 Visualisation directe des règles (sans téléchargement)")
         
@@ -246,7 +267,6 @@ with onglet_typesetter:
         
         col_btn1, col_btn2 = st.columns(2)
         
-        # Téléchargement du .doc HTML encapsulé (sans blocage Word)
         data_docx = generer_instructions_word_html(revue_choisie, cfg, options_article)
         col_btn1.download_button(
             label="📄 Télécharger la Liste d'Instructions (.doc / Word)",
