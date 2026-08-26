@@ -105,7 +105,7 @@ def generer_instructions_word_html(nom_revue, config, options_article):
     return html.encode('utf-8')
 # 3. GENERATEUR DU EXEMPLE VISUEL (.TEX)
 def generer_visuel_latex(nom_revue, config, options_article):
-    """Génère le code LaTeX d'illustration visuelle sans imbrication de f-strings complexes."""
+    """Génère le code LaTeX d'illustration visuelle."""
     hex_color = config["couleur"].lstrip('#')
     r, g, b = tuple(int(hex_color[i:i+2], 16)/255 for i in (0, 2, 4))
     col_mode = "\\usepackage[twocolumn]{geometry}" if config["deux_colonnes"] else ""
@@ -242,25 +242,36 @@ with onglet_typesetter:
             "funding_text": funding_text, "conflict_text": conflict_text, "data_phrasing": data_phrasing
         }
         
+        # --- MISE À JOUR : PANNEAU DE PREVISUALISATION INTÉGRAL ---
         st.write("---")
-        st.subheader("👀 Visualisation directe des règles (sans téléchargement)")
+        st.subheader("👀 Guide de Copy-Editing direct (Conforme au fichier Word)")
         
-        expander_rules = st.expander("📌 Cliquez ici pour déplier les consignes de cette revue", expanded=True)
+        expander_rules = st.expander(f"📌 Consulter la Charte Officielle — {revue_choisie.upper()}", expanded=True)
         with expander_rules:
-            col_preview1, col_preview2 = st.columns(2)
-            with col_preview1:
-                st.markdown("**Charte Graphique :**")
-                st.markdown(f"- **Police demandée :** {cfg['police']}")
-                st.markdown(f"- **Taille des titres :** {cfg['taille_titre']} pt")
-                st.markdown(f"- **Marges :** {cfg['marges']}")
-                st.markdown(f"- **Mise en page :** {'Deux colonnes' if cfg['deux_colonnes'] else 'Une seule colonne standard'}")
-            with col_preview2:
-                st.markdown("**Règles Éditoriales :**")
-                st.markdown(f"- **Style bibliographique :** `{cfg['style_citation']}`")
-                st.markdown(f"- **Ligne d'identification :** {cfg['id_line_format']}")
-                st.markdown(f"- **Mention de copyright :** {'Open Access requis' if cfg['open_access'] else 'Standard'}")
+            # Éléments variables calculés
+            ex_idline = f"{cfg['header']}, 22(1), 78-82, 2026" if cfg["id_line_format"] == "Pagination" else f"{cfg['header']}, 22, 62, 2026"
+            ex_running = f"S. Mathy et al.: {cfg['header']}, 22(1), 78-82, 2026" if cfg["id_line_format"] == "Pagination" else f"S. Mathy et al.: {cfg['header']}, 22, 62, 2026"
+            ex_citation = 'G. Liu, ... "TDM networks...", IEEE Trans. Comp., 1997.' if cfg["style_citation"] == "IEEE" else 'Weinstein, J. (2009). "The market..." Classical Philology.'
+
+            # Affichage structuré
+            st.markdown(f"### 📑 IDLine & En-tête")
+            st.markdown(f"- **Format d'identification :** Basé sur la `{cfg['id_line_format']}`")
+            st.info(f"**Exemple IDLine d'en-tête :** {ex_idline}")
+            st.info(f"**Exemple Running Title (Haut de page centré) :** {ex_running}")
+
+            st.markdown("### ✉️ Mentions Légales & Copyright")
+            st.markdown(f"- **Style de Citation Bibliographique :** `{cfg['style_citation']}`")
+            st.markdown(f"- **Mise en page générale :** `{'Deux colonnes' if cfg['deux_colonnes'] else 'Une seule colonne standard'}`")
+            st.markdown(f"- **Numérotation :** `{'Sections numérotées (1 Introduction)' if cfg['sections_numerotees'] else 'Sections non numérotées'}`")
+            if cfg['open_access']:
+                st.success("🔓 **Revue en Open Access :** Logo obligatoire en haut de page. Mention légale Creative Commons CC-BY 4.0 obligatoire en pied de page.")
             
-            st.warning("⚠️ **Rappels Typographiques Source :** Les termes latins (*et al.*, *in situ*) doivent rester en Romain (pas d'italique). Espace insécable obligatoire avant les unités de mesure (ex: 5 L, 25 °C).")
+            st.markdown("### 🖋️ Structure du Manuscrit (Ordre Strict des Sections Finales)")
+            st.markdown(f"Le typesetter doit obligatoirement respecter l'alignement en **Taille 9 pt** des sections dans l'ordre suivant :")
+            st.code(f"1. Acknowledgments\n2. Funding -> {funding_text}\n3. Conflicts of interest -> {conflict_text}\n4. Data availability statement -> {data_phrasing}\n5. Author contribution statement\n6. Supplementary material\n7. References (Style {cfg['style_citation']})\n8. Citation Box\n9. Appendices / Annexes (9pt)" + ("\n10. S2O Box (Modèle Subscribe to Open Actif)" if is_s2o else ""), language="text")
+
+            st.markdown("### ⚠️ Rappels Typographiques Majeurs (Directives Sources)")
+            st.warning("• **Termes Latins :** Toujours en police **Romaine** (Pas d'italique pour *et al.*, *in situ*, *in vitro*, *versus*, *cf.*).\n\n• **Unités ISO :** Espace insécable obligatoire entre le nombre et l'unité (ex: 5 L, 24 °C, 10 min).\n\n• **Bibliographie :** Pas de majuscules superflues aux titres d'ouvrages. Aucun nom de revue ne doit démarrer par 'The'. Conserver le numéro DOI.")
 
         st.write("---")
         st.subheader("📥 Documents à exporter")
@@ -282,6 +293,7 @@ with onglet_typesetter:
             file_name=f"exemple_visuel_{revue_choisie.lower().replace(' ', '_')}.tex",
             mime="text/plain"
         )
+
 with onglet_editeur:
     st.header("Édition des chartes graphiques par Revue")
     action = st.radio("Action :", ["Modifier une revue existante", "Créer une nouvelle revue"])
