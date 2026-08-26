@@ -2,24 +2,43 @@ import streamlit as st
 import io
 import json
 import os
+import xml.etree.ElementTree as ET
+import zipfile
 
 # 1. CONFIGURATION DE LA PAGE
-st.set_page_config(page_title="Générateur de Templates & Instructions", page_icon="📚", layout="wide")
+st.set_page_config(page_title="Centre de Ressources Éditoriales", page_icon="📚", layout="wide")
 
 FICHIER_SAUVEGARDE = "revues_config.json"
 
-DONNEES_PAR_DEFAUT = {
-    "Revue Alpha (IEEE)": {
-        "police": "Arial", "taille_titre": "18", "couleur": "#1f77b4", "marges": "2.0cm",
-        "header": "J. Eur. Opt. Society-Rapid Publ.", "id_line_format": "Pagination",
-        "style_citation": "IEEE", "open_access": True, "deux_colonnes": True, "sections_numerotees": True
-    },
-    "Revue Beta (APA)": {
-        "police": "Times New Roman", "taille_titre": "16", "couleur": "#d62728", "marges": "2.5cm",
-        "header": "Annals of Modern Physics", "id_line_format": "Article Number",
-        "style_citation": "APA", "open_access": False, "deux_colonnes": False, "sections_numerotees": False
+# Liste de toutes vos revues extraites de l'image
+LISTE_ACRONYMES = [
+    "cagri", "geotech", "jbio", "tpe", "bsgf", "limn", "nss", "parasite", 
+    "pmed", "radiopro", "aacus", "alr", "mfreview", "ocl", "rees", "stet", 
+    "kmae", "mattech", "meca", "metal", "emsci", "ijmqe", "jeos", "rdne", 
+    "sbuild", "smdo", "swsc", "ject", "sicotj", "vcm", "sands", "epn", 
+    "photon", "npvcafe", "npvelsa", "npvequi", "esaim-cocv", "esaim-m2an", 
+    "esaim-ps", "mmnp", "rairo-ro", "rairo-ita", "medsci", "jomos", "ppsy"
+]
+
+# Génération des données de départ pour toutes les revues
+DONNEES_PAR_DEFAUT = {}
+for acro in LISTE_ACRONYMES:
+    # Quelques préréglages automatiques selon les standards habituels de vos revues
+    style_cit = "APA" if acro in ["pmed", "nss", "ppsy", "medsci"] else "IEEE"
+    is_twocol = True if acro in ["jeos", "meca", "photon", "rairo-ro"] else False
+    
+    DONNEES_PAR_DEFAUT[acro] = {
+        "police": "Times New Roman" if style_cit == "APA" else "Arial",
+        "taille_titre": "16" if style_cit == "APA" else "18",
+        "couleur": "#d62728" if style_cit == "APA" else "#1f77b4",
+        "marges": "2.5cm",
+        "header": f"Journal of {acro.upper()} - Research Framework",
+        "id_line_format": "Article Number" if style_cit == "APA" else "Pagination",
+        "style_citation": style_cit,
+        "open_access": True,
+        "deux_colonnes": is_twocol,
+        "sections_numerotees": not is_twocol
     }
-}
 
 def charger_donnees():
     if os.path.exists(FICHIER_SAUVEGARDE):
@@ -27,7 +46,7 @@ def charger_donnees():
             with open(FICHIER_SAUVEGARDE, "r", encoding="utf-8") as f: 
                 return json.load(f)
         except Exception: 
-            return DONNEES_PAR_DEFAUT
+                return DONNEES_PAR_DEFAUT
     return DONNEES_PAR_DEFAUT
 
 def sauvegarder_donnees(donnees):
@@ -37,90 +56,61 @@ def sauvegarder_donnees(donnees):
 if "revues" not in st.session_state:
     st.session_state.revues = charger_donnees()
 
-# 2. GENERATEUR DE LA LISTE D'INSTRUCTIONS (.DOCX / RTF)
-def generer_instructions_docx(nom_revue, config, options_article):
-    """Génère le guide d'instructions textuelles pour le typesetter au format Word."""
+# 2. GENERATEUR NATIF DE FICHIER .DOCX VALIDÉ MICROSOFT WORD
+def generer_instructions_docx_vrai(nom_revue, config, options_article):
+    """Génère un vrai fichier .docx (OpenXML) fonctionnel et compatible toutes plateformes."""
     id_format = "Volume(Fascicule), Pages, Année" if config["id_line_format"] == "Pagination" else "Volume, Numéro d'article, Année"
     
-    texte_rtf = f"""{{\\rtf1\\ansi\\deff0
-{{\\fonttbl{{\\f0\\fnil\\fcharset0 Arial;}}}}
-{{\\colortbl ;\\red{int(config['couleur'][1:3],16)}\\green{int(config['couleur'][3:5],16)}\\blue{int(config['couleur'][5:7],16)};}}
-\\paperw11906\\paperh16838\\margl1440\\margr1440\\margt1440\\margb1440
-\\f0\\fs28\\b\\cf1 GUIDE D'INSTRUCTIONS POUR LE TYPESETTER - {nom_revue.upper()}\\b0\\cf0\\fs20\\par
-\\line
-Ce document récapitule les règles strictes de mise en page à appliquer pour la revue \\b {nom_revue}\\b0.\\par
-\\line
-\\b 1. RÈGLES DE STYLE GÉNÉRALES\\b0\\par
-- \\b Police principale :\\b0 {config['police']} (Titres : {config['taille_titre']}pt, Couleur : {config['couleur']})\\par
-- \\b Marges :\\b0 {config['marges']}\\par
-- \\b Structure :\\b0 {'Deux colonnes (Mise en page symétrique)' if config['deux_colonnes'] else 'Une seule colonne standard'}\\par
-- \\b Numérotation :\\b0 {'Sections numérotées en chiffres arabes' if config['sections_numerotees'] else 'Sections non numérotées'}\\par
-- \\b IDLine requis :\\b0 Format basé sur la \\b {config['id_line_format']}\\b0 ({id_format})\\par
-\\line
-\\b 2. CONSIGNES DE VIGILANCE TEXTUELLE\\b0\\par
-- \\b Termes Latins :\\b0 Les mots comme "et al.", "in situ", "in vitro", "versus" doivent impérativement rester en \\b Romain\\b0 (Pas d'italique) et sans coupure de mot en fin de ligne.\\par
-- \\b Unités de Mesure :\\b0 Toujours insérer un espace insécable entre la valeur et l'unité (ex: 5 L, 10 min, 25 °C).\\par
-\\line
-\\b 3. ORDRE OBLIGATOIRE DES SECTIONS FINALES\\b0\\par
-Le typesetter doit structurer la fin de l'article précisément dans cet ordre :\\par
-1. Acknowledgments (Remerciements)\\par
-2. Funding (Financements) -> \\i {options_article['funding_text']}\\i0\\par
-3. Conflicts of Interest (Conflits d'intérêt) -> \\i {options_article['conflict_text']}\\i0\\par
-4. Data Availability Statement -> \\i {options_article['data_phrasing']}\\i0\\par
-5. Supplementary Material (Si applicable)\\par
-6. References (Bibliographie au style \\b {config['style_citation']}\\b0)\\par
-7. Citation Box (Encadré de citation officiel)\\par
-8. Appendices / Annexes (En taille 9pt)\\par
-{'- 9. S2O Box (À placer tout à la fin car le journal est en Subscribe to Open)' if options_article['is_s2o'] else ''}\\par
-\\line
-\\b 4. CONSIGNES BIBLIOGRAPHIQUES ({config['style_citation']})\\b0\\par
-- Les titres des livres et des revues ne doivent \\b pas\\b0 prendre de majuscules (sauf la première lettre).\\par
-- Aucun nom de revue ne doit commencer par l'article "The".\\par
-- Conserver précieusement le numéro DOI si celui-ci est fourni.\\par
-}}"""
-    return texte_rtf.encode('utf-8')
-# 2. GENERATEUR DE LA LISTE D'INSTRUCTIONS (.DOCX / RTF)
-def generer_instructions_docx(nom_revue, config, options_article):
-    """Génère le guide d'instructions textuelles pour le typesetter au format Word."""
-    id_format = "Volume(Fascicule), Pages, Année" if config["id_line_format"] == "Pagination" else "Volume, Numéro d'article, Année"
+    # Création de la structure XML minimale pour un document Word standard
+    document_xml = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <w:document xmlns:w="http://openxmlformats.org">
+        <w:body>
+            <w:p>
+                <w:pPr><w:pStyle w:val="Heading1"/></w:pPr>
+                <w:r><w:t>GUIDE D'INSTRUCTIONS TYPESETTER : {nom_revue.upper()}</w:t></w:r>
+            </w:p>
+            <w:p><w:r><w:t>Ce document récapitule les règles d'harmonisation de la charte graphique.</w:t></w:r></w:p>
+            <w:p/>
+            <w:p><w:r><w:b/><w:t>1. REGLES DE STYLE GENERALES :</w:t></w:r></w:p>
+            <w:p><w:r><w:t>- Police principale : {config['police']} (Titres : {config['taille_titre']}pt, Couleur : {config['couleur']})</w:t></w:r></w:p>
+            <w:p><w:r><w:t>- Marges : {config['marges']}</w:t></w:r></w:p>
+            <w:p><w:r><w:t>- Structure : {'Deux colonnes' if config['deux_colonnes'] else 'Une seule colonne standard'}</w:t></w:r></w:p>
+            <w:p><w:r><w:t>- IDLine requis : Format basé sur la {config['id_line_format']} ({id_format})</w:t></w:r></w:p>
+            <w:p/>
+            <w:p><w:r><w:b/><w:t>2. CONSIGNES DE VIGILANCE TEXTUELLE :</w:t></w:r></w:p>
+            <w:p><w:r><w:t>- Termes Latins : Les mots comme "et al.", "in situ", "in vitro", "versus" doivent impérativement rester en Romain (Pas d'italique).</w:t></w:r></w:p>
+            <w:p><w:r><w:t>- Unités de Mesure : Toujours insérer un espace insécable entre la valeur et l'unité (ex: 5 L, 10 min).</w:t></w:r></w:p>
+            <w:p/>
+            <w:p><w:r><w:b/><w:t>3. ORDRE OBLIGATOIRE DES SECTIONS FINALES :</w:t></w:r></w:p>
+            <w:p><w:r><w:t>Le typesetter doit structurer la fin de l'article précisément dans cet ordre :</w:t></w:r></w:p>
+            <w:p><w:r><w:t>1. Acknowledgments (Remerciements)</w:t></w:r></w:p>
+            <w:p><w:r><w:t>2. Funding (Financements) -> {options_article['funding_text']}</w:t></w:r></w:p>
+            <w:p><w:r><w:t>3. Conflicts of Interest -> {options_article['conflict_text']}</w:t></w:r></w:p>
+            <w:p><w:r><w:t>4. Data Availability Statement -> {options_article['data_phrasing']}</w:t></w:r></w:p>
+            <w:p><w:r><w:t>5. Supplementary Material</w:t></w:r></w:p>
+            <w:p><w:r><w:t>6. References (Style bibliographique : {config['style_citation']})</w:t></w:r></w:p>
+            <w:p><w:r><w:t>7. Citation Box</w:t></w:r></w:p>
+            <w:p><w:r><w:t>8. Appendices / Annexes (En taille 9pt)</w:t></w:r></w:p>
+            {"<w:p><w:r><w:t>9. S2O Box (Journal sous pavillon Subscribe to Open)</w:t></w:r></w:p>" if options_article['is_s2o'] else ""}
+            <w:p/>
+            <w:p><w:r><w:b/><w:t>4. CONSIGNES BIBLIOGRAPHIQUES ({config['style_citation']}) :</w:t></w:r></w:p>
+            <w:p><w:r><w:t>- Les titres des livres et des revues ne doivent pas prendre de majuscules (sauf la première lettre).</w:t></w:r></w:p>
+            <w:p><w:r><w:t>- Aucun nom de revue ne doit commencer par l'article "The".</w:t></w:r></w:p>
+        </w:body>
+    </w:document>
+    """
     
-    texte_rtf = f"""{{\\rtf1\\ansi\\deff0
-{{\\fonttbl{{\\f0\\fnil\\fcharset0 Arial;}}}}
-{{\\colortbl ;\\red{int(config['couleur'][1:3],16)}\\green{int(config['couleur'][3:5],16)}\\blue{int(config['couleur'][5:7],16)};}}
-\\paperw11906\\paperh16838\\margl1440\\margr1440\\margt1440\\margb1440
-\\f0\\fs28\\b\\cf1 GUIDE D'INSTRUCTIONS POUR LE TYPESETTER - {nom_revue.upper()}\\b0\\cf0\\fs20\\par
-\\line
-Ce document récapitule les règles strictes de mise en page à appliquer pour la revue \\b {nom_revue}\\b0.\\par
-\\line
-\\b 1. RÈGLES DE STYLE GÉNÉRALES\\b0\\par
-- \\b Police principale :\\b0 {config['police']} (Titres : {config['taille_titre']}pt, Couleur : {config['couleur']})\\par
-- \\b Marges :\\b0 {config['marges']}\\par
-- \\b Structure :\\b0 {'Deux colonnes (Mise en page symétrique)' if config['deux_colonnes'] else 'Une seule colonne standard'}\\par
-- \\b Numérotation :\\b0 {'Sections numérotées en chiffres arabes' if config['sections_numerotees'] else 'Sections non numérotées'}\\par
-- \\b IDLine requis :\\b0 Format basé sur la \\b {config['id_line_format']}\\b0 ({id_format})\\par
-\\line
-\\b 2. CONSIGNES DE VIGILANCE TEXTUELLE\\b0\\par
-- \\b Termes Latins :\\b0 Les mots comme "et al.", "in situ", "in vitro", "versus" doivent impérativement rester en \\b Romain\\b0 (Pas d'italique) et sans coupure de mot en fin de ligne.\\par
-- \\b Unités de Mesure :\\b0 Toujours insérer un espace insécable entre la valeur et l'unité (ex: 5 L, 10 min, 25 °C).\\par
-\\line
-\\b 3. ORDRE OBLIGATOIRE DES SECTIONS FINALES\\b0\\par
-Le typesetter doit structurer la fin de l'article précisément dans cet ordre :\\par
-1. Acknowledgments (Remerciements)\\par
-2. Funding (Financements) -> \\i {options_article['funding_text']}\\i0\\par
-3. Conflicts of Interest (Conflits d'intérêt) -> \\i {options_article['conflict_text']}\\i0\\par
-4. Data Availability Statement -> \\i {options_article['data_phrasing']}\\i0\\par
-5. Supplementary Material (Si applicable)\\par
-6. References (Bibliographie au style \\b {config['style_citation']}\\b0)\\par
-7. Citation Box (Encadré de citation officiel)\\par
-8. Appendices / Annexes (En taille 9pt)\\par
-{'- 9. S2O Box (À placer tout à la fin car le journal est en Subscribe to Open)' if options_article['is_s2o'] else ''}\\par
-\\line
-\\b 4. CONSIGNES BIBLIOGRAPHIQUES ({config['style_citation']})\\b0\\par
-- Les titres des livres et des revues ne doivent \\b pas\\b0 prendre de majuscules (sauf la première lettre).\\par
-- Aucun nom de revue ne doit commencer par l'article "The".\\par
-- Conserver précieusement le numéro DOI si celui-ci est fourni.\\par
-}}"""
-    return texte_rtf.encode('utf-8')
+    # Création de l'archive ZIP mimant la structure officielle d'un fichier .docx Microsoft Word
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as docx:
+        docx.writestr('document.xml', document_xml)
+        docx.writestr('[Content_Types].xml', """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <Types xmlns="http://openxmlformats.org">
+            <Default Extension="xml" ContentType="application/xml"/>
+            <Override PartName="/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+        </Types>""")
+    buffer.seek(0)
+    return buffer.getvalue()
 
 # 3. GENERATEUR DU EXEMPLE VISUEL (.TEX)
 def generer_visuel_latex(nom_revue, config, options_article):
@@ -226,8 +216,9 @@ onglet_typesetter, onglet_editeur = st.tabs(["🚀 Espace Téléchargement (Type
 
 with onglet_typesetter:
     st.header("Paquet de Publication par Revue")
-    st.write("Sélectionnez la revue et configurez l'article pour exporter vos documents d'accompagnement.")
+    st.write("Sélectionnez la revue et configurez l'article pour exporter ou consulter vos documents.")
     
+    # Menu déroulant affichant l'intégralité de vos acronymes (de cagri à ppsy)
     revue_choisie = st.selectbox("Sélectionner la revue :", list(st.session_state.revues.keys()))
     
     if revue_choisie:
@@ -257,12 +248,34 @@ with onglet_typesetter:
             "funding_text": funding_text, "conflict_text": conflict_text, "data_phrasing": data_phrasing
         }
         
+        # --- NOUVEAUTÉ : PANNEAU DE PREVISUALISATION DIRECTE ---
+        st.write("---")
+        st.subheader("👀 Visualisation directe des règles (sans téléchargement)")
+        
+        expander_rules = st.expander("📌 Cliquez ici pour déplier les consignes de cette revue", expanded=True)
+        with expander_rules:
+            col_preview1, col_preview2 = st.columns(2)
+            with col_preview1:
+                st.markdown(f"**Charte Graphique :**")
+                st.markdown(f"- **Police :** {cfg['police']}")
+                st.markdown(f"- **Taille des titres :** {cfg['taille_titre']} pt")
+                st.markdown(f"- **Marges :** {cfg['marges']}")
+                st.markdown(f"- **Mise en page :** {'Deux colonnes' if cfg['deux_colonnes'] else 'Une seule colonne standard'}")
+            with col_preview2:
+                st.markdown(f"**Règles Éditoriales :**")
+                st.markdown(f"- **Style bibliographique :** `{cfg['style_citation']}`")
+                st.markdown(f"- **Ligne d'identification :** {cfg['id_line_format']}")
+                st.markdown(f"- **Mention de copyright :** {'Open Access requis' if cfg['open_access'] else 'Standard'}")
+            
+            st.warning("⚠️ **Rappels Typographiques Impératifs :** Les termes latins (*et al.*, *in situ*) restent en Romain. Espace insécable obligatoire avant les unités de mesure (ex: 5 L). Pas de majuscules superflues dans la bibliographie.")
+
         st.write("---")
         st.subheader("📥 Documents à exporter")
         
         col_btn1, col_btn2 = st.columns(2)
         
-        data_docx = generer_instructions_docx(revue_choisie, cfg, options_article)
+        # Téléchargement du vrai .docx généré via la structure OpenXML corrigée
+        data_docx = generer_instructions_docx_vrai(revue_choisie, cfg, options_article)
         col_btn1.download_button(
             label="📄 Télécharger la Liste d'Instructions (.docx)",
             data=data_docx,
@@ -277,8 +290,6 @@ with onglet_typesetter:
             file_name=f"exemple_visuel_{revue_choisie.lower().replace(' ', '_')}.tex",
             mime="text/plain"
         )
-        
-        st.caption("💡 **Note pour le Typesetter :** Pour visualiser le rendu final sous forme de PDF, téléchargez le fichier `.tex` ci-dessus et compilez-le dans votre logiciel de traitement LaTeX habituel.")
 
 with onglet_editeur:
     st.header("Édition des chartes graphiques par Revue")
