@@ -93,6 +93,12 @@ def generer_visuel_latex(nom_revue, config, options_article):
     else:
         citation_box = "Cite this article as: Nom, P. (2026). \"Title of the article.\" " + config['header'] + ", 22(1), 78-82."
 
+    # Gestion propre des conditions sans imbriquer de f-strings complexes
+    mention_special = "\\noindent\\small\\textit{Special Issue / Guest Editors: Dr. A, Dr. B}\\hfill" if options_article['is_special'] else ""
+    mention_oa = "\\small\\textbf{(Open Access Logo)}" if config['open_access'] else ""
+    note_equal = "\\footnotetext{$\\star$ These authors contributed equally.}" if options_article['equal_contrib'] else ""
+    mention_s2o = "\\vspace{0.3cm}\\noindent\\textbf{S2O Box:} Ce journal est publié selon le modèle Subscribe to Open." if options_article['is_s2o'] else ""
+
     template = f"""\\documentclass[10pt, a4paper]{{article}}
 \\usepackage[utf8]{{inputenc}}
 \\usepackage[margin={config['marges']}]{{geometry}}
@@ -115,22 +121,20 @@ def generer_visuel_latex(nom_revue, config, options_article):
 
 \\begin{{document}}
 
-\\noindent
-\\small\\textit{{{'Special Issue / Guest Editors: Dr. A, Dr. B' if options_article['is_special'] else ''}}}
-\\hfill
-\\small\\textbf{{{'(Open Access Logo)' if config['open_access'] else ''}}}
+{mention_special}
+{mention_oa}
 \\vspace{{0.5cm}}
 
 \\begin{{center}}
     {{\\Large\\bfseries\\color{{couleurRevue}} Titre de l'Article d'Exemple pour {nom_revue} \\\\}}
     \\vspace{{0.4cm}}
-    {{\\large Prénom Nom$^{1,*}$ \\\\}}
+    {{\\large Prénom Nom$^{{1,*}}$ \\\\}}
     \\vspace{{0.2cm}}
     {{\\footnotesize 1 Nom du Laboratoire, Ville, Pays (Sans point final)}}
 \\end{{center}}
 
 \\footnotetext{{* Corresponding author: contact@revue.com}}
-{f'\\\\footnotetext{{$\\star$ These authors contributed equally.}}' if options_article['equal_contrib'] else ''}
+{note_equal}
 
 \\vspace{{0.4cm}}
 \\noindent\\textbf{{Abstract – }} \\lipsum[1]
@@ -155,23 +159,22 @@ Remerciements à l'équipe éditoriale.
 {options_article['data_phrasing']}
 
 \\section{{References}}
-\\footnotesize
-[1] D. Sarunyagate, *Lasers*. New York: McGraw-Hill, 1996.\\\\
-[2] G. Weinstein, ''The market in Plato's Republic,'' *Classical Philology*, vol. 104, pp. 439-458, 2009.
+\\footnotesize D. Sarunyagate, *Lasers*. New York: McGraw-Hill, 1996.\\\\ G. Weinstein, ''The market in Plato's Republic,'' *Classical Philology*, vol. 104, pp. 439-458, 2009.
 
 \\vspace{{0.5cm}}
 \\noindent\\fbox{{
 \\begin{{minipage}}{{\\linewidth}}
-\\bseries{{Citation Box:}}\\\\
+\\bfseries{{Citation Box:}}\\\\
 {citation_box}
 \\end{{minipage}}
 }}
 
-{f'\\\\vspace{{0.3cm}}\\\\noindent\\\\textbf{{S2O Box:}} Ce journal est publié selon le modèle Subscribe to Open.' if options_article['is_s2o'] else ''}
+{mention_s2o}
 
 \\end{{document}}
 """
     return template.encode('utf-8')
+
 
 # 4. INTERFACE GRAPHIQUE
 st.title("📚 Centre de Ressources Éditoriales")
