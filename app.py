@@ -309,7 +309,7 @@ with tab_editeurs:
                             sauvegarder_revue_sqlite(nom_revue, dict_actuel)
                         st.rerun()
 
-        # --- SECTION 3 : IMPORT INITIAL (ANTI-BOUCLE) ---
+              # --- SECTION 3 : IMPORT INITIAL (ANTI-BOUCLE ET RECHARGEMENT FORCE) ---
         lbl_imp_titre = "3. Remplissage ou Remplacement global via Excel" if st.session_state.langue == "Français" else "3. Global Upload or Replacement via Excel"
         lbl_imp_desc = "Déposez votre fichier Excel pour pré-remplir la base de données." if st.session_state.langue == "Français" else "Upload your Excel file to pre-fill the database."
         lbl_file_pld = "Déposer le fichier Excel (.xlsx)" if st.session_state.langue == "Français" else "Drop the Excel file (.xlsx)"
@@ -343,12 +343,17 @@ with tab_editeurs:
                         sauvegarder_revue_sqlite(nom_revue, dict_revue)
                     
                     st.session_state.import_deja_fait = True
+                    
+                    # 🔄 CORRECTION ICI : On force le rechargement en mémoire avant le rerun
+                    st.session_state.df_revues = charger_donnees_sqlite()
+                    
                     st.success("✅ Succès !" if st.session_state.langue == "Français" else "✅ Success!")
                     st.rerun()
                 else:
                     st.error("⚠️ Colonne 'Revue' manquante." if st.session_state.langue == "Français" else "⚠️ Missing 'Revue' column.")
             except Exception as e:
                 st.error(f"⚠️ Erreur : {e}")
+
 
 # ==========================================
 # 2. POINT D'ENTRÉE : COMPOSITEURS
