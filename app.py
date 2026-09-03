@@ -142,32 +142,7 @@ with tab_editeurs:
                             st.toast(f"Supabase mis à jour pour {revue_a_modifier} !", icon="☁️")
                             st.rerun()
 
-            # CAS 2 : MODIFICATION GLOBALE (Écraser une section pour toutes les revues)
-            else:
-                section_a_modifier = st.selectbox("Sélectionner la section à harmoniser partout :", liste_sections)
-                premiere_revue_nom = df_edition.index if len(df_edition.index) > 0 else "Aucune"
-                valeur_premiere_revue = str(df_edition.iloc[section_a_modifier]) if len(df_edition.index) > 0 else ""
-                
-                if valeur_premiere_revue == "nan" or valeur_premiere_revue == "/":
-                    valeur_premiere_revue = ""
-                
-                nom_label_global = section_a_modifier.replace("_", " ").capitalize()
-                
-                with st.form("form_global_revue"):
-                    st.write(f"🚨 Vous allez écraser la section **{nom_label_global}** pour **toutes** les revues.")
-                    st.caption(f"💡 Champ pré-rempli avec le texte actuel de la première revue : *{premiere_revue_nom}*.")
-                    
-                    texte_global = st.text_area("Nouveau texte commun à appliquer partout :", value=valeur_premiere_revue)
-                    soumettre_global = st.form_submit_button("⚠️ Écraser et Sauvegarder sur tout le Cloud")
-                    
-                    if soumettre_global:
-                        texte_global_propre = texte_global if texte_global.strip() != "" else "/"
-                        
-                        requete_globale = f"UPDATE instructions_revues SET {section_a_modifier} = :texte;"
-                        if executer_requete_sql(requete_globale, {"texte": texte_global_propre}):
-                            st.toast("Mise à jour globale réussie sur Supabase !", icon="☁️")
-                            st.rerun()
-            # --- SECTION 2 : STRUCTURER LA BASE DE DONNÉES (AJOUT & SUPPRESSION) ---
+                       # --- SECTION 2 : STRUCTURER LA BASE DE DONNÉES (AJOUT & SUPPRESSION) ---
             st.markdown("---")
             st.subheader("2. Structurer la base de données")
             
@@ -255,7 +230,15 @@ with tab_editeurs:
                         
                         for col in df_nouveau.columns:
                             if col != "Revue":
-                                col_sql = col.strip().lower().replace(" ", "_").replace("-", "_").replace(",", "_").replace("(", "_").replace(")", "_")
+                                # NETTOYAGE CORRIGÉ : On remplace les caractères spéciaux et on force les underscores uniques
+                                col_sql = col.strip().lower()
+                                for char in [" ", "-", ",", "(", ")"]:
+                                    col_sql = col_sql.replace(char, "_")
+                                
+                                # On réduit les doubles ou triples underscores provoqués par ", " en un seul "_"
+                                while "__" in col_sql:
+                                    col_sql = col_sql.replace("__", "_")
+                                
                                 valeur = str(row[col]).strip() if pd.notna(row[col]) else "/"
                                 
                                 try:
