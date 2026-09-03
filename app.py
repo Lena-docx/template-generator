@@ -137,6 +137,10 @@ tab_editeurs, tab_compositeurs = st.tabs([T["tab_editeurs"], T["tab_compositeurs
 with tab_editeurs:
     st.header(T["titre_editeur"])
     
+    # 🔑 SECURITÉ AUTOMATIQUE : Crée la variable de connexion si elle n'existe pas encore
+    if "authentifie" not in st.session_state:
+        st.session_state.authentifie = False
+    
     if not st.session_state.authentifie:
         with st.form("form_auth"):
             mdp_saisi = st.text_input(T["auth_label"], type="password")
@@ -147,6 +151,7 @@ with tab_editeurs:
                     st.rerun()
                 else:
                     st.error(T["auth_err"])
+
     else:
         # Bouton de déconnexion bilingue
         if st.button(T["logout_btn"]):
