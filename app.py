@@ -165,11 +165,15 @@ with tab_editeurs:
                         st.toast(f"Base locale mise à jour pour {revue_a_modifier} !", icon="💾")
                         st.rerun()
 
-            # CAS 2 : MODIFICATION GLOBALE (Écraser une section pour toutes les revues)
+                      # CAS 2 : MODIFICATION GLOBALE (Écraser une section pour toutes les revues)
             else:
                 section_a_modifier = st.selectbox("Sélectionner la section à harmoniser partout :", liste_sections)
-                premiere_revue_nom = df_edition.index if len(df_edition.index) > 0 else "Aucune"
-                valeur_premiere_revue = str(df_edition.iloc[section_a_modifier]) if len(df_edition.index) > 0 else ""
+                premiere_revue_nom = df_edition.index[0] if len(df_edition.index) > 0 else "Aucune"
+                
+                # CORRECTION ICI : Utilisation de .at pour indexer par les noms textuels (ligne, colonne)
+                valeur_premiere_revue = ""
+                if len(df_edition.index) > 0:
+                    valeur_premiere_revue = str(df_edition.at[premiere_revue_nom, section_a_modifier])
                 
                 if valeur_premiere_revue == "nan" or valeur_premiere_revue == "/":
                     valeur_premiere_revue = ""
@@ -177,6 +181,7 @@ with tab_editeurs:
                 with st.form("form_global_revue"):
                     st.write(f"🚨 Vous allez écraser la section **{section_a_modifier}** pour **toutes** les revues.")
                     st.caption(f"💡 Champ pré-rempli avec le texte actuel de la première revue : *{premiere_revue_nom}*.")
+
                     
                     texte_global = st.text_area("Nouveau texte commun à appliquer partout :", value=valeur_premiere_revue)
                     soumettre_global = st.form_submit_button("⚠️ Écraser et Sauvegarder sur tout le catalogue")
