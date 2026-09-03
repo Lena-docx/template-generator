@@ -198,7 +198,7 @@ with tab_editeurs:
                         st.toast("Mise à jour globale enregistrée localement !", icon="💾")
                         st.rerun()
 
-            # --- SECTION 2 : STRUCTURER LA BASE DE DONNÉES (AJOUT & SUPPRESSION) ---
+                       # --- SECTION 2 : STRUCTURER LA BASE DE DONNÉES (AJOUT & SUPPRESSION) ---
             st.markdown("---")
             st.subheader("2. Structurer la base de données")
             
@@ -269,18 +269,27 @@ with tab_editeurs:
                         st.success(f"La section '{section_a_supprimer}' a été retirée pour tout le monde.")
                         st.rerun()
 
-        # --- SECTION 3 : IMPORT INITIAL DE TOUT LE FICHIER EXCEL ---
+        # --- SECTION 3 : IMPORT INITIAL DE TOUT LE FICHIER EXCEL (CORRIGÉ ANTI-BOUCLE) ---
         st.markdown("---")
         st.subheader("3. Remplissage ou Remplacement global via Excel")
         st.write("Déposez votre fichier Excel d'origine pour pré-remplir instantanément la base locale de l'application.")
         
+        # Initialisation d'un flag pour empêcher la boucle infinie de rafraîchissement
+        if "import_deja_fait" not in st.session_state:
+            st.session_state.import_deja_fait = False
+
         fichier_charge = st.file_uploader(
             "Déposer le fichier Excel complet (.xlsx)", 
             type=["xlsx"],
             key="uploader_excel"
         )
         
-        if fichier_charge is not None:
+        # Si le fichier est retiré par l'utilisateur, on réinitialise le flag
+        if fichier_charge is None:
+            st.session_state.import_deja_fait = False
+        
+        # On n'importe QUE si un fichier est présent ET qu'il n'a pas encore été traité dans cette session
+        if fichier_charge is not None and not st.session_state.import_deja_fait:
             try:
                 df_nouveau = pd.read_excel(fichier_charge)
                 if "Revue" in df_nouveau.columns:
@@ -299,7 +308,9 @@ with tab_editeurs:
                                 dict_revue[str(col).strip()] = str(row[col]).strip() if pd.notna(row[col]) else "/"
                         
                         sauvegarder_revue_sqlite(nom_revue, dict_revue)
-                        
+                    
+                    # On bloque les imports futurs pour ce fichier spécifique tant qu'il reste dans le uploader
+                    st.session_state.import_deja_fait = True
                     st.success("✅ Félicitations ! Votre application est entièrement configurée avec vos données Excel d'origine.")
                     st.rerun()
                 else:
@@ -343,4 +354,3 @@ with tab_compositeurs:
                 if pd.notna(contenu) and str(contenu).strip() not in ["", "/"]:
                     st.subheader(str(section))
                     st.write(str(contenu).strip())
-
