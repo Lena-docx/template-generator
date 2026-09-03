@@ -12,7 +12,7 @@ st.title("Instructions de mise en page")
 FICHIER_EXCEL = "revues.xlsx"
 MOT_DE_PASSE_EDITEUR = "Editeur2026"  # 🔐 Modifiez ce mot de passe selon vos besoins
 
-# INITIALISATION DES DONNÉES
+# INITIALISATION DES DONNÉES AUTOMATIQUE
 if "df_revues" not in st.session_state:
     if os.path.exists(FICHIER_EXCEL):
         try:
@@ -73,7 +73,7 @@ with tab_editeurs:
                 else:
                     st.error("🔑 Mot de passe incorrect.")
     else:
-        # Bouton de déconnexion discret
+        # Bouton de déconnexion discret si l'utilisateur est authentifié
         if st.button("🔒 Se déconnecter de l'espace Éditeur"):
             st.session_state.authentifie = False
             st.rerun()
@@ -119,8 +119,8 @@ with tab_editeurs:
             # CAS 2 : MODIFICATION GLOBALE
             else:
                 section_a_modifier = st.selectbox("Sélectionner la section à harmoniser partout :", liste_sections)
-                premiere_revue_nom = df_edition.index[0] if len(df_edition.index) > 0 else "Aucune"
-                valeur_premiere_revue = str(df_edition.iloc[0][section_a_modifier]) if len(df_edition.index) > 0 else ""
+                premiere_revue_nom = df_edition.index if len(df_edition.index) > 0 else "Aucune"
+                valeur_premiere_revue = str(df_edition.iloc[section_a_modifier]) if len(df_edition.index) > 0 else ""
                 
                 if valeur_premiere_revue == "nan" or valeur_premiere_revue == "/":
                     valeur_premiere_revue = ""
@@ -132,19 +132,21 @@ with tab_editeurs:
                     texte_global = st.text_area("Nouveau texte commun à appliquer partout :", value=valeur_premiere_revue)
                     soumettre_global = st.form_submit_button("⚠️ Écraser et Sauvegarder partout")
                     if soumettre_global:
-                        st.session_state.df_revues[section_a_modifier] = texte_global if texte_global.strip() != "" else "/"
+                        st.session_state.df_revues[section_a_modifier] = text_global if texte_global.strip() != "" else "/"
                         if sauvegarder_sur_disque(st.session_state.df_revues):
                             st.toast("Fichier Excel global mis à jour !", icon="💾")
                             st.rerun()
-            # --- SECTION 2 : STRUCTURE (AJOUTER REVUE / SECTION) ---
+            # --- SECTION 2 : STRUCTURER LA BASE DE DONNÉES (AJOUT & SUPPRESSION) ---
             st.markdown("---")
             st.subheader("2. Structurer la base de données")
             
+            # Bloc A : AJOUTS (Côte à côte)
+            st.markdown("##### ➕ Ajouts")
             col_revue, col_section = st.columns(2)
             
             with col_revue:
                 with st.form("form_ajouter_revue"):
-                    st.write("➕ **Ajouter une nouvelle revue**")
+                    st.write("**Ajouter une nouvelle revue**")
                     nouvelle_revue_nom = st.text_input("Nom de la nouvelle revue :")
                     soumettre_nouvelle_revue = st.form_submit_button("Créer la revue")
                     if soumettre_nouvelle_revue and nouvelle_revue_nom.strip() != "":
@@ -154,12 +156,12 @@ with tab_editeurs:
                         else:
                             st.session_state.df_revues.loc[nom_propre] = ["/"] * len(liste_sections)
                             if sauvegarder_sur_disque(st.session_state.df_revues):
-                                st.success(f"Revue '{nom_propre}' créée ! Vous pouvez l'éditer ci-dessus.")
+                                st.success(f"Revue '{nom_propre}' créée !")
                                 st.rerun()
                                 
             with col_section:
                 with st.form("form_ajouter_section"):
-                    st.write("📂 **Ajouter une nouvelle section**")
+                    st.write("**Ajouter une nouvelle section**")
                     nouvelle_section_nom = st.text_input("Nom de la nouvelle section (ex: 'Police de titre') :")
                     soumettre_nouvelle_section = st.form_submit_button("Créer la section")
                     if soumettre_nouvelle_section and nouvelle_section_nom.strip() != "":
@@ -169,16 +171,42 @@ with tab_editeurs:
                         else:
                             st.session_state.df_revues[sec_propre] = "/"
                             if sauvegarder_sur_disque(st.session_state.df_revues):
-                                st.success(f"Section '{sec_propre}' ajoutée à toutes les revues !")
+                                st.success(f"Section '{sec_propre}' ajoutée partout !")
                                 st.rerun()
 
-        # --- SECTION 3 : GESTION DE LA BASE DE DONNÉES (DÉPLACÉE EN BAS) ---
+            # Bloc B : SUPPRESSIONS (Côte à côte pour nettoyer les erreurs)
+            st.markdown("##### 🗑️ Suppressions (Irréversible)")
+            col_del_revue, col_del_section = st.columns(2)
+            
+            with col_del_revue:
+                with st.form("form_supprimer_revue"):
+                    st.write("**Supprimer une revue**")
+                    revue_a_supprimer = st.selectbox("Revue à détruire :", ["-- Sélectionner --"] + list(df_edition.index))
+                    soumettre_del_revue = st.form_submit_button("💥 Supprimer la revue")
+                    if soumettre_del_revue and revue_a_supprimer != "-- Sélectionner --":
+                        st.session_state.df_revues = st.session_state.df_revues.drop(index=revue_a_supprimer)
+                        if sauvegarder_sur_disque(st.session_state.df_revues):
+                            st.success(f"La revue '{revue_a_supprimer}' a été supprimée.")
+                            st.rerun()
+                            
+            with col_del_section:
+                with st.form("form_supprimer_section"):
+                    st.write("**Supprimer une section complète**")
+                    section_a_supprimer = st.selectbox("Section à détruire :", ["-- Sélectionner --"] + liste_sections)
+                    soumettre_del_section = st.form_submit_button("💥 Supprimer la section")
+                    if soumettre_del_section and section_a_supprimer != "-- Sélectionner --":
+                        st.session_state.df_revues = st.session_state.df_revues.drop(columns=[section_a_supprimer])
+                        if sauvegarder_sur_disque(st.session_state.df_revues):
+                            st.success(f"La section '{section_a_supprimer}' a été supprimée pour toutes les revues.")
+                            st.rerun()
+
+        # --- SECTION 3 : GESTION DE LA BASE DE DONNÉES (REMPLACEMENT GLOBAL) ---
         st.markdown("---")
         st.subheader("3. Gestion de la base de données (Fichier complet)")
-        st.success("📊 La base de données 'revues.xlsx' est active et connectée au serveur.")
+        st.success("📊 La base de données 'revues.xlsx' est active.")
         
         fichier_charge = st.file_uploader(
-            "Remplacer complètement la base de données actuelle par un nouveau fichier Excel complet", 
+            "Remplacer complètement la base de données par un nouveau fichier Excel", 
             type=["xlsx"],
             key="uploader_excel"
         )
@@ -190,7 +218,7 @@ with tab_editeurs:
                     new_df = df_nouveau.set_index("Revue")
                     if sauvegarder_sur_disque(new_df):
                         st.session_state.df_revues = new_df
-                        st.success("✅ Nouveau fichier enregistré sur le disque !")
+                        st.success("✅ Nouveau fichier enregistré !")
                         st.rerun()
                 else:
                     st.error("⚠️ Erreur : Le fichier doit contenir une colonne nommée 'Revue'.")
