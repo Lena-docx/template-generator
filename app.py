@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from docx import Document
 from io import BytesIO
+from sqlalchemy import text  # 🔐 Requis pour la sécurité de SQLAlchemy 2.0
 
 # Configuration de la page
 st.set_page_config(page_title="Instructions Compositeur", layout="centered")
@@ -13,7 +14,7 @@ MOT_DE_PASSE_EDITEUR = "Editeur2026"  # 🔐 Modifiez ce mot de passe selon vos 
 try:
     conn = st.connection("postgresql", type="sql")
 except Exception as e:
-    st.error(f"❌ Impossible de se connecter à Supabase. Vérifiez votre secrets.toml. Erreur : {e}")
+    st.error(f"❌ Impossible de se connecter à Supabase. Vérifiez vos Secrets. Erreur : {e}")
     st.stop()
 
 def charger_donnees_supabase():
@@ -31,10 +32,11 @@ def charger_donnees_supabase():
         return None
 
 def executer_requete_sql(requete, parametres=None):
-    """Exécute une commande d'écriture (INSERT, UPDATE, DELETE, ALTER) de manière sécurisée"""
+    """Exécute une commande d'écriture (INSERT, UPDATE, DELETE, ALTER) sécurisée pour SQLAlchemy 2.0"""
     try:
         with conn.session as session:
-            session.execute(requete, parametres)
+            # L'expression textuelle est explicitement déclarée avec text() pour éviter les erreurs de compilation
+            session.execute(text(requete), parametres)
             session.commit()
         return True
     except Exception as e:
@@ -132,7 +134,6 @@ with tab_editeurs:
                         for section, nv_texte in nouveaux_contenus.items():
                             texte_propre = nv_texte if nv_texte.strip() != "" else "/"
                             
-                            # Préparation de la requête SQL dynamique sécurisée
                             requete = f"UPDATE instructions_revues SET {section} = :texte WHERE revue = :nom_revue;"
                             if not executer_requete_sql(requete, {"texte": texte_propre, "nom_revue": revue_a_modifier}):
                                 succes_global = False
@@ -162,7 +163,6 @@ with tab_editeurs:
                     if soumettre_global:
                         texte_global_propre = texte_global if texte_global.strip() != "" else "/"
                         
-                        # Requête SQL pour mettre à jour toutes les lignes d'un coup
                         requete_globale = f"UPDATE instructions_revues SET {section_a_modifier} = :texte;"
                         if executer_requete_sql(requete_globale, {"texte": texte_global_propre}):
                             st.toast("Mise à jour globale réussie sur Supabase !", icon="☁️")
@@ -196,12 +196,10 @@ with tab_editeurs:
                     nouvelle_section_nom = st.text_input("Nom de la nouvelle section (ex: 'Format PDF') :")
                     soumettre_nouvelle_section = st.form_submit_button("Créer la section")
                     if soumettre_nouvelle_section and nouvelle_section_nom.strip() != "":
-                        # Formater le nom pour qu'il soit compatible avec une colonne SQL (minuscules et underscores)
                         sec_sql = nouvelle_section_nom.strip().lower().replace(" ", "_").replace("-", "_")
                         if sec_sql in st.session_state.df_revues.columns:
                             st.error("⚠️ Cette section existe déjà.")
                         else:
-                            # Commande ALTER TABLE pour modifier la structure SQL en direct
                             requete_alter = f"ALTER TABLE instructions_revues ADD COLUMN {sec_sql} TEXT DEFAULT '/';"
                             if executer_requete_sql(requete_alter):
                                 st.success(f"Section '{nouvelle_section_nom}' ajoutée à toute la base !")
@@ -248,24 +246,18 @@ with tab_editeurs:
             try:
                 df_nouveau = pd.read_excel(fichier_charge)
                 if "Revue" in df_nouveau.columns:
-                    # On nettoie d'abord la table SQL actuelle pour éviter les doublons
+                    # Vidage de la table via l'appel textuel sécurisé
                     executer_requete_sql("TRUNCATE TABLE instructions_revues;")
                     
-                    # On parcourt le fichier Excel pour tout insérer proprement en base de données
-                    succes_import = True
                     for _, row in df_nouveau.iterrows():
                         nom_revue = str(row["Revue"]).strip()
-                        
-                        # Création de la ligne de base
                         executer_requete_sql("INSERT INTO instructions_revues (revue) VALUES (:nom_revue);", {"nom_revue": nom_revue})
                         
-                        # Remplissage de toutes ses colonnes correspondantes
                         for col in df_nouveau.columns:
                             if col != "Revue":
-                                col_sql = col.strip().lower().replace(" ", "_").replace("-", "_").replace(",", "_")
+                                col_sql = col.strip().lower().replace(" ", "_").replace("-", "_").replace(",", "_").replace("(", "_").replace(")", "_")
                                 valeur = str(row[col]).strip() if pd.notna(row[col]) else "/"
                                 
-                                # Si la colonne existe dans la structure SQL, on injecte la donnée
                                 try:
                                     executer_requete_sql(f"UPDATE instructions_revues SET {col_sql} = :val WHERE revue = :nom;", {"val": valeur, "nom": nom_revue})
                                 except Exception:
@@ -297,7 +289,6 @@ with tab_compositeurs:
         if choix != "-- Sélectionnez une revue --":
             instructions_revue = df_revues.loc[choix]
             
-            # Génération à la volée du Word depuis le Cloud
             fichier_word = generer_document_word(choix, instructions_revue)
             st.download_button(
                 label="📄 Télécharger au format Word (.docx)",
@@ -308,10 +299,8 @@ with tab_compositeurs:
             
             st.markdown("---")
             
-            # Affichage fluide des instructions à l'écran
             for section, contenu in instructions_revue.items():
                 if pd.notna(contenu) and str(contenu).strip() not in ["", "/"]:
-                    # Rendre le titre propre pour l'affichage compositeur
                     titre_affiche = section.replace("_", " ").capitalize()
                     st.subheader(titre_affiche)
                     st.write(str(contenu).strip())
