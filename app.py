@@ -3,7 +3,7 @@ import pandas as pd
 from docx import Document
 from io import BytesIO
 import sqlite3
-import json  # 👈 Import propre ici
+import json
 
 # 1. CONFIGURATION DE LA PAGE
 st.set_page_config(page_title="Instructions Compositeur", layout="centered")
@@ -13,7 +13,7 @@ if "langue" not in st.session_state:
     st.session_state.langue = "Français"
 
 # Sélecteur de langue placé discrètement en haut de l'écran
-col_titre, col_langue = st.columns([4, 1])
+col_titre, col_langue = st.columns()
 with col_langue:
     st.session_state.langue = st.selectbox(
         "🌐 Language :", 
@@ -66,7 +66,6 @@ st.title(T["titre_app"])
 
 MOT_DE_PASSE_EDITEUR = "Editeur2026"
 DB_NOM = "revues.db"
-
 def initialiser_sqlite():
     """Crée la table SQLite locale au premier démarrage si elle n'existe pas"""
     conn = sqlite3.connect(DB_NOM)
@@ -83,7 +82,7 @@ def initialiser_sqlite():
 initialiser_sqlite()
 
 def charger_donnees_sqlite():
-    """Lit les données de SQLite et reconstruit un DataFrame Pandas propre (CORRIGÉ)"""
+    """Lit les données de SQLite et reconstruit un DataFrame Pandas propre"""
     conn = sqlite3.connect(DB_NOM)
     try:
         df_sql = pd.read_sql_query("SELECT * FROM instructions", conn)
@@ -145,20 +144,18 @@ def generer_document_word(nom_revue, données_instructions):
 # Chargement immédiat des données SQLite
 st.session_state.df_revues = charger_donnees_sqlite()
 
-# Remplacement des onglets par les variables traduites
+# Création des onglets bilingues
 tab_editeurs, tab_compositeurs = st.tabs([T["tab_editeurs"], T["tab_compositeurs"]])
-
-
 # ==========================================
-# 1. POINT D'ENTRÉE : ÉDITEURS (SUITE DU BLOC 1)
+# 1. POINT D'ENTRÉE : ÉDITEURS
 # ==========================================
 with tab_editeurs:
     st.header(T["titre_editeur"])
     
-    # 🔑 SECURITÉ AUTOMATIQUE : Crée la variable de connexion si elle n'existe pas encore
+    # Sécurité d'accès
     if "authentifie" not in st.session_state:
         st.session_state.authentifie = False
-    
+        
     if not st.session_state.authentifie:
         with st.form("form_auth"):
             mdp_saisi = st.text_input(T["auth_label"], type="password")
@@ -169,7 +166,6 @@ with tab_editeurs:
                     st.rerun()
                 else:
                     st.error(T["auth_err"])
-
     else:
         # Bouton de déconnexion bilingue
         if st.button(T["logout_btn"]):
@@ -219,7 +215,7 @@ with tab_editeurs:
                         st.toast(T["save_success"], icon="💾")
                         st.rerun()
 
-            # CAS 2 : MODIFICATION GLOBALE
+            # CAS 2 : MODIFICATION GLOBALE (Harmonisation de masse)
             else:
                 lbl_select_sec = "Sélectionner la section à harmoniser partout :" if st.session_state.langue == "Français" else "Select the section to standardize everywhere:"
                 section_a_modifier = st.selectbox(lbl_select_sec, liste_sections)
@@ -327,13 +323,33 @@ with tab_editeurs:
                             sauvegarder_revue_sqlite(nom_revue, dict_actuel)
                         st.rerun()
 
-              # --- SECTION 3 : IMPORT INITIAL (ANTI-BOUCLE ET RECHARGEMENT FORCE) ---
-        lbl_imp_titre = "3. Remplissage ou Remplacement global via Excel" if st.session_state.langue == "Français" else "3. Global Upload or Replacement via Excel"
-        lbl_imp_desc = "Déposez votre fichier Excel pour pré-remplir la base de données." if st.session_state.langue == "Français" else "Upload your Excel file to pre-fill the database."
-        lbl_file_pld = "Déposer le fichier Excel (.xlsx)" if st.session_state.langue == "Français" else "Drop the Excel file (.xlsx)"
-        
+        # --- SECTION 3 : IMPORT & EXPORT DE SECURITÉ VIA EXCEL ---
+        lbl_imp_titre = "3. Gestion globale de la base de données (Fichier Excel)" if st.session_state.langue == "Français" else "3. Global Database Management (Excel File)"
         st.markdown("---")
         st.subheader(lbl_imp_titre)
+
+        # 📥 PARTIE A : CONFIGURER LE BOUTON DE SAUVEGARDE EXCEL
+        if st.session_state.df_revues is not None:
+            lbl_exp_desc = "📥 **Sauvegarde :** Téléchargez la version actuelle de la base de données contenant toutes vos modifications récentes au format Excel :" if st.session_state.langue == "Français" else "📥 **Backup:** Download the current database containing all your recent modifications as an Excel file:"
+            lbl_exp_btn = "🟢 Télécharger la base de données mise à jour (.xlsx)" if st.session_state.langue == "Français" else "🟢 Download updated database (.xlsx)"
+            
+            st.write(lbl_exp_desc)
+            output_excel = BytesIO()
+            st.session_state.df_revues.reset_index().to_excel(output_excel, index=False)
+            output_excel.seek(0)
+            
+            st.download_button(
+                label=lbl_exp_btn,
+                data=output_excel,
+                file_name="base_revues_mise_a_jour.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            st.markdown("")
+
+        # 📤 PARTIE B : CHARGER OU REMPLACER LA BASE EXISTANTE (ANTI-BOUCLE)
+        lbl_imp_desc = "📤 **Remplacement :** Déposez un fichier Excel complet pour pré-remplir ou écraser l'intégralité de la base de données." if st.session_state.langue == "Français" else "📤 **Replacement:** Upload a complete Excel file to pre-fill or overwrite the entire database."
+        lbl_file_pld = "Déposer le fichier Excel (.xlsx)" if st.session_state.langue == "Français" else "Drop the Excel file (.xlsx)"
+        
         st.write(lbl_imp_desc)
         
         if "import_deja_fait" not in st.session_state:
@@ -361,17 +377,13 @@ with tab_editeurs:
                         sauvegarder_revue_sqlite(nom_revue, dict_revue)
                     
                     st.session_state.import_deja_fait = True
-                    
-                    # 🔄 CORRECTION ICI : On force le rechargement en mémoire avant le rerun
                     st.session_state.df_revues = charger_donnees_sqlite()
-                    
                     st.success("✅ Succès !" if st.session_state.langue == "Français" else "✅ Success!")
                     st.rerun()
                 else:
                     st.error("⚠️ Colonne 'Revue' manquante." if st.session_state.langue == "Français" else "⚠️ Missing 'Revue' column.")
             except Exception as e:
                 st.error(f"⚠️ Erreur : {e}")
-
 
 # ==========================================
 # 2. POINT D'ENTRÉE : COMPOSITEURS
@@ -397,13 +409,10 @@ with tab_compositeurs:
             st.download_button(
                 label=T["btn_word"],
                 data=fichier_word,
-                file_name=f"Instructions_{choix}.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            )
-            
-            st.markdown("---")
-            
-            for section, contenu in instructions_revue.items():
-                if pd.notna(contenu) and str(contenu).strip() not in ["", "/"]:
-                    st.subheader(str(section))
-                    st.write(str(contenu).strip())
+                file_name=f"Instructions_{choix}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+st.markdown("---")
+for section, contenu in instructions_revue.items():
+    if pd.notna(contenu) and str(contenu).strip() not in ["", "/"]:
+        st.subheader(str(section))
+        st.write(str(contenu).strip())
