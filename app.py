@@ -2,37 +2,43 @@ import streamlit as st
 import pandas as pd
 from docx import Document
 from io import BytesIO
-import os
 
 # Configuration de la page
 st.set_page_config(page_title="Instructions Compositeur", layout="centered")
 st.title("Instructions de mise en page")
 
-# Nom du fichier unique utilisé par l'application
-FICHIER_EXCEL = "revues.xlsx"
 MOT_DE_PASSE_EDITEUR = "Editeur2026"  # 🔐 Modifiez ce mot de passe selon vos besoins
 
-# INITIALISATION DES DONNÉES AUTOMATIQUE
-if "df_revues" not in st.session_state:
-    if os.path.exists(FICHIER_EXCEL):
-        try:
-            df_init = pd.read_excel(FICHIER_EXCEL)
-            if "Revue" in df_init.columns:
-                st.session_state.df_revues = df_init.set_index("Revue")
-            else:
-                st.session_state.df_revues = None
-        except Exception:
-            st.session_state.df_revues = None
-    else:
-        st.session_state.df_revues = None
+# CONNEXION NATIVE POSTGRESQL (Utilise le fichier .streamlit/secrets.toml)
+try:
+    conn = st.connection("postgresql", type="sql")
+except Exception as e:
+    st.error(f"❌ Impossible de se connecter à Supabase. Vérifiez votre secrets.toml. Erreur : {e}")
+    st.stop()
 
-def sauvegarder_sur_disque(df):
-    """Sauvegarde le DataFrame directement dans le fichier Excel local"""
+def charger_donnees_supabase():
+    """Récupère toutes les données de Supabase et reconstruit le DataFrame"""
     try:
-        df.reset_index().to_excel(FICHIER_EXCEL, index=False)
+        df = conn.query("SELECT * FROM instructions_revues;", ttl="0m")
+        if df.empty:
+            return None
+        # On retire l'id technique SQL et on met la Revue en index comme avant
+        if "id" in df.columns:
+            df = df.drop(columns=["id"])
+        return df.set_index("revue")
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la lecture sur Supabase : {e}")
+        return None
+
+def executer_requete_sql(requete, parametres=None):
+    """Exécute une commande d'écriture (INSERT, UPDATE, DELETE, ALTER) de manière sécurisée"""
+    try:
+        with conn.session as session:
+            session.execute(requete, parametres)
+            session.commit()
         return True
     except Exception as e:
-        st.error(f"❌ Erreur technique lors de l'écriture sur le disque : {e}")
+        st.error(f"❌ Erreur de modification SQL : {e}")
         return False
 
 def generer_document_word(nom_revue, données_instructions):
@@ -40,14 +46,23 @@ def generer_document_word(nom_revue, données_instructions):
     doc.add_heading(f"Instructions de mise en page — {nom_revue}", level=1)
     
     for section, contenu in données_instructions.items():
+        # Transformation du nom de colonne SQL en titre lisible (ex: open_access -> Open access)
+        titre_propre = section.replace("_", " ").capitalize()
         if pd.notna(contenu) and str(contenu).strip() not in ["", "/"]:
-            doc.add_heading(section, level=2)
+            doc.add_heading(titre_propre, level=2)
             doc.add_paragraph(str(contenu).strip())
             
     output = BytesIO()
     doc.save(output)
     output.seek(0)
     return output
+
+# Chargement immédiat des données globales depuis le Cloud
+df_revues_db = charger_donnees_supabase()
+if df_revues_db is not None:
+    st.session_state.df_revues = df_revues_db
+else:
+    st.session_state.df_revues = None
 
 # Création des deux points d'entrée
 tab_editeurs, tab_compositeurs = st.tabs(["✍️ Éditeurs", "🎼 Compositeurs"])
@@ -106,17 +121,27 @@ with tab_editeurs:
                         if valeur_actuelle == "nan" or valeur_actuelle == "/":
                             valeur_actuelle = ""
                         
-                        nouveaux_contenus[section] = st.text_area(f"Section : {section}", value=valeur_actuelle)
+                        # Affichage d'un nom de section plus lisible pour l'humain
+                        nom_label = section.replace("_", " ").capitalize()
+                        nouveaux_contenus[section] = st.text_area(f"Section : {nom_label}", value=valeur_actuelle)
                     
-                    soumettre = st.form_submit_button("💾 Enregistrer et appliquer définitivement")
+                    soumettre = st.form_submit_button("💾 Enregistrer et appliquer sur le Cloud Supabase")
                     if soumettre:
+                        succes_global = True
+                        # Mise à jour colonne par colonne dans PostgreSQL
                         for section, nv_texte in nouveaux_contenus.items():
-                            st.session_state.df_revues.loc[revue_a_modifier, section] = nv_texte if nv_texte.strip() != "" else "/"
-                        if sauvegarder_sur_disque(st.session_state.df_revues):
-                            st.toast(f"Fichier Excel mis à jour pour {revue_a_modifier} !", icon="💾")
+                            texte_propre = nv_texte if nv_texte.strip() != "" else "/"
+                            
+                            # Préparation de la requête SQL dynamique sécurisée
+                            requete = f"UPDATE instructions_revues SET {section} = :texte WHERE revue = :nom_revue;"
+                            if not executer_requete_sql(requete, {"texte": texte_propre, "nom_revue": revue_a_modifier}):
+                                succes_global = False
+                        
+                        if succes_global:
+                            st.toast(f"Supabase mis à jour pour {revue_a_modifier} !", icon="☁️")
                             st.rerun()
 
-            # CAS 2 : MODIFICATION GLOBALE
+            # CAS 2 : MODIFICATION GLOBALE (Écraser une section pour toutes les revues)
             else:
                 section_a_modifier = st.selectbox("Sélectionner la section à harmoniser partout :", liste_sections)
                 premiere_revue_nom = df_edition.index if len(df_edition.index) > 0 else "Aucune"
@@ -125,16 +150,22 @@ with tab_editeurs:
                 if valeur_premiere_revue == "nan" or valeur_premiere_revue == "/":
                     valeur_premiere_revue = ""
                 
+                nom_label_global = section_a_modifier.replace("_", " ").capitalize()
+                
                 with st.form("form_global_revue"):
-                    st.write(f"🚨 Vous allez écraser la section **{section_a_modifier}** pour **toutes** les revues.")
+                    st.write(f"🚨 Vous allez écraser la section **{nom_label_global}** pour **toutes** les revues.")
                     st.caption(f"💡 Champ pré-rempli avec le texte actuel de la première revue : *{premiere_revue_nom}*.")
                     
                     texte_global = st.text_area("Nouveau texte commun à appliquer partout :", value=valeur_premiere_revue)
-                    soumettre_global = st.form_submit_button("⚠️ Écraser et Sauvegarder partout")
+                    soumettre_global = st.form_submit_button("⚠️ Écraser et Sauvegarder sur tout le Cloud")
+                    
                     if soumettre_global:
-                        st.session_state.df_revues[section_a_modifier] = text_global if texte_global.strip() != "" else "/"
-                        if sauvegarder_sur_disque(st.session_state.df_revues):
-                            st.toast("Fichier Excel global mis à jour !", icon="💾")
+                        texte_global_propre = texte_global if texte_global.strip() != "" else "/"
+                        
+                        # Requête SQL pour mettre à jour toutes les lignes d'un coup
+                        requete_globale = f"UPDATE instructions_revues SET {section_a_modifier} = :texte;"
+                        if executer_requete_sql(requete_globale, {"texte": texte_global_propre}):
+                            st.toast("Mise à jour globale réussie sur Supabase !", icon="☁️")
                             st.rerun()
             # --- SECTION 2 : STRUCTURER LA BASE DE DONNÉES (AJOUT & SUPPRESSION) ---
             st.markdown("---")
@@ -152,29 +183,31 @@ with tab_editeurs:
                     if soumettre_nouvelle_revue and nouvelle_revue_nom.strip() != "":
                         nom_propre = nouvelle_revue_nom.strip()
                         if nom_propre in st.session_state.df_revues.index:
-                            st.error("⚠️ Cette revue existe déjà.")
+                            st.error("⚠️ Cette revue existe déjà dans Supabase.")
                         else:
-                            st.session_state.df_revues.loc[nom_propre] = ["/"] * len(liste_sections)
-                            if sauvegarder_sur_disque(st.session_state.df_revues):
-                                st.success(f"Revue '{nom_propre}' créée !")
+                            requete_add = "INSERT INTO instructions_revues (revue) VALUES (:nom_revue);"
+                            if executer_requete_sql(requete_add, {"nom_revue": nom_propre}):
+                                st.success(f"Revue '{nom_propre}' créée sur le Cloud !")
                                 st.rerun()
                                 
             with col_section:
                 with st.form("form_ajouter_section"):
                     st.write("**Ajouter une nouvelle section**")
-                    nouvelle_section_nom = st.text_input("Nom de la nouvelle section (ex: 'Police de titre') :")
+                    nouvelle_section_nom = st.text_input("Nom de la nouvelle section (ex: 'Format PDF') :")
                     soumettre_nouvelle_section = st.form_submit_button("Créer la section")
                     if soumettre_nouvelle_section and nouvelle_section_nom.strip() != "":
-                        sec_propre = nouvelle_section_nom.strip()
-                        if sec_propre in st.session_state.df_revues.columns:
+                        # Formater le nom pour qu'il soit compatible avec une colonne SQL (minuscules et underscores)
+                        sec_sql = nouvelle_section_nom.strip().lower().replace(" ", "_").replace("-", "_")
+                        if sec_sql in st.session_state.df_revues.columns:
                             st.error("⚠️ Cette section existe déjà.")
                         else:
-                            st.session_state.df_revues[sec_propre] = "/"
-                            if sauvegarder_sur_disque(st.session_state.df_revues):
-                                st.success(f"Section '{sec_propre}' ajoutée partout !")
+                            # Commande ALTER TABLE pour modifier la structure SQL en direct
+                            requete_alter = f"ALTER TABLE instructions_revues ADD COLUMN {sec_sql} TEXT DEFAULT '/';"
+                            if executer_requete_sql(requete_alter):
+                                st.success(f"Section '{nouvelle_section_nom}' ajoutée à toute la base !")
                                 st.rerun()
 
-            # Bloc B : SUPPRESSIONS (Côte à côte pour nettoyer les erreurs)
+            # Bloc B : SUPPRESSIONS (Irréversibles)
             st.markdown("##### 🗑️ Suppressions (Irréversible)")
             col_del_revue, col_del_section = st.columns(2)
             
@@ -184,9 +217,9 @@ with tab_editeurs:
                     revue_a_supprimer = st.selectbox("Revue à détruire :", ["-- Sélectionner --"] + list(df_edition.index))
                     soumettre_del_revue = st.form_submit_button("💥 Supprimer la revue")
                     if soumettre_del_revue and revue_a_supprimer != "-- Sélectionner --":
-                        st.session_state.df_revues = st.session_state.df_revues.drop(index=revue_a_supprimer)
-                        if sauvegarder_sur_disque(st.session_state.df_revues):
-                            st.success(f"La revue '{revue_a_supprimer}' a été supprimée.")
+                        requete_del_rev = "DELETE FROM instructions_revues WHERE revue = :nom_revue;"
+                        if executer_requete_sql(requete_del_rev, {"nom_revue": revue_a_supprimer}):
+                            st.success(f"La revue '{revue_a_supprimer}' a été supprimée de Supabase.")
                             st.rerun()
                             
             with col_del_section:
@@ -195,18 +228,18 @@ with tab_editeurs:
                     section_a_supprimer = st.selectbox("Section à détruire :", ["-- Sélectionner --"] + liste_sections)
                     soumettre_del_section = st.form_submit_button("💥 Supprimer la section")
                     if soumettre_del_section and section_a_supprimer != "-- Sélectionner --":
-                        st.session_state.df_revues = st.session_state.df_revues.drop(columns=[section_a_supprimer])
-                        if sauvegarder_sur_disque(st.session_state.df_revues):
-                            st.success(f"La section '{section_a_supprimer}' a été supprimée pour toutes les revues.")
+                        requete_del_sec = f"ALTER TABLE instructions_revues DROP COLUMN {section_a_supprimer};"
+                        if executer_requete_sql(requete_del_sec):
+                            st.success(f"La section '{section_a_supprimer}' a été définitivement retirée.")
                             st.rerun()
 
-        # --- SECTION 3 : GESTION DE LA BASE DE DONNÉES (REMPLACEMENT GLOBAL) ---
+        # --- SECTION 3 : IMPORT INITIAL DE TOUT LE FICHIER EXCEL ---
         st.markdown("---")
-        st.subheader("3. Gestion de la base de données (Fichier complet)")
-        st.success("📊 La base de données 'revues.xlsx' est active.")
+        st.subheader("3. Remplissage initial ou Remplacement de masse")
+        st.write("Utilisez cette section pour charger votre fichier Excel initial et remplir Supabase d'un seul coup.")
         
         fichier_charge = st.file_uploader(
-            "Remplacer complètement la base de données par un nouveau fichier Excel", 
+            "Déposer le fichier Excel complet pour peupler le Cloud", 
             type=["xlsx"],
             key="uploader_excel"
         )
@@ -215,15 +248,34 @@ with tab_editeurs:
             try:
                 df_nouveau = pd.read_excel(fichier_charge)
                 if "Revue" in df_nouveau.columns:
-                    new_df = df_nouveau.set_index("Revue")
-                    if sauvegarder_sur_disque(new_df):
-                        st.session_state.df_revues = new_df
-                        st.success("✅ Nouveau fichier enregistré !")
-                        st.rerun()
+                    # On nettoie d'abord la table SQL actuelle pour éviter les doublons
+                    executer_requete_sql("TRUNCATE TABLE instructions_revues;")
+                    
+                    # On parcourt le fichier Excel pour tout insérer proprement en base de données
+                    succes_import = True
+                    for _, row in df_nouveau.iterrows():
+                        nom_revue = str(row["Revue"]).strip()
+                        
+                        # Création de la ligne de base
+                        executer_requete_sql("INSERT INTO instructions_revues (revue) VALUES (:nom_revue);", {"nom_revue": nom_revue})
+                        
+                        # Remplissage de toutes ses colonnes correspondantes
+                        for col in df_nouveau.columns:
+                            if col != "Revue":
+                                col_sql = col.strip().lower().replace(" ", "_").replace("-", "_").replace(",", "_")
+                                valeur = str(row[col]).strip() if pd.notna(row[col]) else "/"
+                                
+                                # Si la colonne existe dans la structure SQL, on injecte la donnée
+                                try:
+                                    executer_requete_sql(f"UPDATE instructions_revues SET {col_sql} = :val WHERE revue = :nom;", {"val": valeur, "nom": nom_revue})
+                                except Exception:
+                                    pass
+                    st.success("✅ Félicitations ! Votre base PostgreSQL de Supabase est désormais entièrement peuplée.")
+                    st.rerun()
                 else:
-                    st.error("⚠️ Erreur : Le fichier doit contenir une colonne nommée 'Revue'.")
+                    st.error("⚠️ Erreur : Le fichier Excel doit contenir une colonne nommée exactement 'Revue'.")
             except Exception as e:
-                st.error(f"⚠️ Erreur de lecture : {e}")
+                st.error(f"⚠️ Erreur de traitement du fichier Excel : {e}")
 
 # ==========================================
 # 2. POINT D'ENTRÉE : COMPOSITEURS
@@ -232,7 +284,7 @@ with tab_compositeurs:
     st.header("Espace Compositeurs")
     
     if st.session_state.df_revues is None:
-        st.info("ℹ️ En attente de l'initialisation du fichier 'revues.xlsx' par un Éditeur.")
+        st.info("ℹ️ L'application est connectée au Cloud Supabase, mais aucune revue n'a encore été créée par l'Éditeur.")
     else:
         df_revues = st.session_state.df_revues
         
@@ -245,6 +297,7 @@ with tab_compositeurs:
         if choix != "-- Sélectionnez une revue --":
             instructions_revue = df_revues.loc[choix]
             
+            # Génération à la volée du Word depuis le Cloud
             fichier_word = generer_document_word(choix, instructions_revue)
             st.download_button(
                 label="📄 Télécharger au format Word (.docx)",
@@ -255,7 +308,10 @@ with tab_compositeurs:
             
             st.markdown("---")
             
+            # Affichage fluide des instructions à l'écran
             for section, contenu in instructions_revue.items():
                 if pd.notna(contenu) and str(contenu).strip() not in ["", "/"]:
-                    st.subheader(section)
+                    # Rendre le titre propre pour l'affichage compositeur
+                    titre_affiche = section.replace("_", " ").capitalize()
+                    st.subheader(titre_affiche)
                     st.write(str(contenu).strip())
