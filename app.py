@@ -13,7 +13,7 @@ if "langue" not in st.session_state:
     st.session_state.langue = "Français"
 
 # Sélecteur de langue placé discrètement en haut de l'écran
-col_titre, col_langue = st.columns()
+col_titre, col_langue = st.columns(2)
 with col_langue:
     st.session_state.langue = st.selectbox(
         "🌐 Language :", 
