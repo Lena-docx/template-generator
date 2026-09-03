@@ -5,8 +5,8 @@ from io import BytesIO
 import sqlite3
 
 # Configuration de la page
-st.set_page_config(page_title="Instructions Compositeur", layout="centered")
-st.title("Instructions de mise en page")
+st.set_page_config(page_title="Copy-Editing Instructions", layout="centered")
+st.title("Copy-Editing Instructions")
 
 MOT_DE_PASSE_EDITEUR = "Editeur2026"  # 🔐 Modifiez ce mot de passe selon vos besoins
 DB_NOM = "revues.db"
@@ -79,7 +79,7 @@ def supprimer_revue_sqlite(nom_revue):
 
 def generer_document_word(nom_revue, données_instructions):
     doc = Document()
-    doc.add_heading(f"Instructions de mise en page — {nom_revue}", level=1)
+    doc.add_heading(f"Copy-Editing Instructions — {nom_revue}", level=1)
     
     for section, contenu in données_instructions.items():
         if pd.notna(contenu) and str(contenu).strip() not in ["", "/"]:
@@ -130,7 +130,7 @@ with tab_editeurs:
             liste_sections = list(df_edition.columns)
             
             # --- SECTION 1 : MODIFIER ET SAUVEGARDER EN DIRECT ---
-            st.subheader("1. Modifier et Sauvegarder en direct")
+            st.subheader("1. Modification des instructions")
             
             mode_modification = st.radio(
                 "Périmètre de la modification :",
@@ -151,7 +151,7 @@ with tab_editeurs:
                         if valeur_actuelle == "nan" or valeur_actuelle == "/":
                             valeur_actuelle = ""
                         
-                        nouveaux_contenus[section] = st.text_area(f"Section : {section}", value=valeur_actuelle)
+                        nouveaux_contenus[section] = st.text_area(f"{section}", value=valeur_actuelle)
                     
                     soumettre = st.form_submit_button("💾 Enregistrer et appliquer définitivement")
                     if soumettre:
