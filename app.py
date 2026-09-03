@@ -3,6 +3,7 @@ import pandas as pd
 from docx import Document
 from io import BytesIO
 import sqlite3
+import json  # 👈 Import propre ici
 
 # 1. CONFIGURATION DE LA PAGE
 st.set_page_config(page_title="Instructions Compositeur", layout="centered")
@@ -12,7 +13,7 @@ if "langue" not in st.session_state:
     st.session_state.langue = "Français"
 
 # Sélecteur de langue placé discrètement en haut de l'écran
-col_titre, col_langue = st.columns([3, 1])
+col_titre, col_langue = st.columns([4, 1])
 with col_langue:
     st.session_state.langue = st.selectbox(
         "🌐 Language :", 
@@ -20,7 +21,7 @@ with col_langue:
         index=0 if st.session_state.langue == "Français" else 1
     )
 
-# Dictionnaire centralisé de toutes les traductions de l'interface
+# Dictionnaire de toutes les traductions de l'interface
 TRAD = {
     "Français": {
         "titre_app": "Instructions de mise en page",
@@ -66,48 +67,61 @@ st.title(T["titre_app"])
 MOT_DE_PASSE_EDITEUR = "Editeur2026"
 DB_NOM = "revues.db"
 
-# [Le reste de vos fonctions d'initialisation SQLite reste identique...]
 def initialiser_sqlite():
+    """Crée la table SQLite locale au premier démarrage si elle n'existe pas"""
     conn = sqlite3.connect(DB_NOM)
     cursor = conn.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS instructions (revue TEXT PRIMARY KEY, donnees_json TEXT);")
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS instructions (
+        revue TEXT PRIMARY KEY,
+        donnees_json TEXT
+    );
+    """)
     conn.commit()
     conn.close()
 
 initialiser_sqlite()
 
 def charger_donnees_sqlite():
+    """Lit les données de SQLite et reconstruit un DataFrame Pandas propre (CORRIGÉ)"""
     conn = sqlite3.connect(DB_NOM)
     try:
         df_sql = pd.read_sql_query("SELECT * FROM instructions", conn)
         conn.close()
+        
         if df_sql.empty:
             return None
-        import json, liste_dictionnaires
+            
         liste_dictionnaires = []
         for _, row in df_sql.iterrows():
             dict_revue = json.loads(row["donnees_json"])
             dict_revue["Revue"] = row["revue"]
             liste_dictionnaires.append(dict_revue)
+            
         df_final = pd.DataFrame(liste_dictionnaires)
         return df_final.set_index("Revue")
     except Exception:
-        conn.close()
+        if 'conn' in locals():
+            conn.close()
         return None
 
 def sauvegarder_revue_sqlite(nom_revue, dictionnaire_sections):
-    import json
+    """Sauvegarde ou met à jour une revue et ses consignes en format JSON structuré"""
     conn = sqlite3.connect(DB_NOM)
     cursor = conn.cursor()
     json_consignes = json.dumps(dictionnaire_sections)
+    
     cursor.execute("""
-        INSERT INTO instructions (revue, donnees_json) VALUES (?, ?)
+        INSERT INTO instructions (revue, donnees_json) 
+        VALUES (?, ?)
         ON CONFLICT(revue) DO UPDATE SET donnees_json = excluded.donnees_json;
     """, (nom_revue, json_consignes))
+    
     conn.commit()
     conn.close()
 
 def supprimer_revue_sqlite(nom_revue):
+    """Supprime définitivement une revue de la base de données"""
     conn = sqlite3.connect(DB_NOM)
     cursor = conn.cursor()
     cursor.execute("DELETE FROM instructions WHERE revue = ?;", (nom_revue,))
@@ -117,19 +131,23 @@ def supprimer_revue_sqlite(nom_revue):
 def generer_document_word(nom_revue, données_instructions):
     doc = Document()
     doc.add_heading(f"Instructions de mise en page — {nom_revue}" if st.session_state.langue == "Français" else f"Layout Instructions — {nom_revue}", level=1)
+    
     for section, contenu in données_instructions.items():
         if pd.notna(contenu) and str(contenu).strip() not in ["", "/"]:
             doc.add_heading(str(section).capitalize(), level=2)
             doc.add_paragraph(str(contenu).strip())
+            
     output = BytesIO()
     doc.save(output)
     output.seek(0)
     return output
 
+# Chargement immédiat des données SQLite
 st.session_state.df_revues = charger_donnees_sqlite()
 
 # Remplacement des onglets par les variables traduites
 tab_editeurs, tab_compositeurs = st.tabs([T["tab_editeurs"], T["tab_compositeurs"]])
+
 
 # ==========================================
 # 1. POINT D'ENTRÉE : ÉDITEURS (SUITE DU BLOC 1)
