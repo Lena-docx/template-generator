@@ -28,7 +28,6 @@ def generer_document_word(nom_revue, données_instructions):
 # Fonction pour convertir le DataFrame modifié en Excel téléchargeable
 def exporter_excel(df):
     output = BytesIO()
-    # On réinitialise l'index pour que la colonne 'Revue' revienne dans le fichier Excel
     df.reset_index().to_excel(output, index=False)
     output.seek(0)
     return output
@@ -80,12 +79,10 @@ with tab_editeurs:
         if mode_modification == "Pour une seule revue":
             revue_a_modifier = st.selectbox("Sélectionner la revue à éditer :", df_edition.index)
             
-            # Formulaire pour modifier une seule revue
             with st.form("form_mono_revue"):
                 st.write(f"✍️ Modifications pour la revue : **{revue_a_modifier}**")
                 nouveaux_contenus = {}
                 
-                # Génération dynamique des champs de texte pour chaque section
                 for section in liste_sections:
                     valeur_actuelle = str(df_edition.loc[revue_a_modifier, section])
                     if valeur_actuelle == "nan" or valeur_actuelle == "/":
@@ -100,13 +97,27 @@ with tab_editeurs:
                     st.success(f"💾 Les modifications pour '{revue_a_modifier}' ont été appliquées en mémoire !")
                     st.rerun()
 
-        # CAS 2 : MODIFICATION GLOBALE
+        # CAS 2 : MODIFICATION GLOBALE (Mis à jour avec pré-remplissage)
         else:
             section_a_modifier = st.selectbox("Sélectionner la section à harmoniser partout :", liste_sections)
             
+            # Récupération sécurisée de la valeur de la toute première revue du tableau
+            premiere_revue_nom = df_edition.index[0]
+            valeur_premiere_revue = str(df_edition.iloc[0][section_a_modifier])
+            
+            # Nettoyage si la case est vide ou contient un slash
+            if valeur_premiere_revue == "nan" or valeur_premiere_revue == "/":
+                valeur_premiere_revue = ""
+            
             with st.form("form_global_revue"):
                 st.write(f"🚨 Vous allez écraser la section **{section_a_modifier}** pour **toutes** les revues.")
-                texte_global = st.text_area("Nouveau texte commun à appliquer partout :", value="")
+                st.caption(f"💡 Le champ ci-dessous a été pré-rempli avec le texte actuel de la première revue : *{premiere_revue_nom}*.")
+                
+                # Le champ prend désormais la valeur par défaut de la 1ère revue
+                texte_global = st.text_area(
+                    "Nouveau texte commun à appliquer partout :", 
+                    value=valeur_premiere_revue
+                )
                 
                 soumettre_global = st.form_submit_button("⚠️ Appliquer à TOUTES les revues")
                 if soumettre_global:
