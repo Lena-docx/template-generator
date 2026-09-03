@@ -10,6 +10,7 @@ st.title("Instructions de mise en page")
 
 # Nom du fichier unique utilisé par l'application
 FICHIER_EXCEL = "revues.xlsx"
+MOT_DE_PASSE_EDITEUR = "Editeur2026"  # 🔐 Modifiez ce mot de passe selon vos besoins
 
 # INITIALISATION DES DONNÉES
 if "df_revues" not in st.session_state:
@@ -26,9 +27,8 @@ if "df_revues" not in st.session_state:
         st.session_state.df_revues = None
 
 def sauvegarder_sur_disque(df):
-    """Sauvegarde le DataFrame directement dans le fichier Excel local du serveur"""
+    """Sauvegarde le DataFrame directement dans le fichier Excel local"""
     try:
-        # On réinitialise l'index pour réintégrer la colonne 'Revue' dans le fichier Excel
         df.reset_index().to_excel(FICHIER_EXCEL, index=False)
         return True
     except Exception as e:
@@ -58,103 +58,144 @@ tab_editeurs, tab_compositeurs = st.tabs(["✍️ Éditeurs", "🎼 Compositeurs
 with tab_editeurs:
     st.header("Espace Éditeurs")
     
-    st.subheader("1. Gestion de la base de données")
-    
-    if st.session_state.df_revues is not None:
-        st.success("📊 La base de données 'revues.xlsx' est active et connectée.")
-    else:
-        st.warning(f"⚠️ Le fichier '{FICHIER_EXCEL}' n'existe pas encore. Vous devez charger un premier fichier pour l'initialiser.")
-
-    # Zone pour charger un NOUVEAU fichier complet (écrase l'ancien sur le disque)
-    fichier_charge = st.file_uploader(
-        "Remplacer complètement la base de données actuelle par un nouveau fichier Excel", 
-        type=["xlsx"],
-        key="uploader_excel"
-    )
-    
-    if fichier_charge is not None:
-        try:
-            df_nouveau = pd.read_excel(fichier_charge)
-            if "Revue" in df_nouveau.columns:
-                new_df = df_nouveau.set_index("Revue")
-                # Sauvegarde immédiate sur le disque dur
-                if sauvegarder_sur_disque(new_df):
-                    st.session_state.df_revues = new_df
-                    st.success("✅ Nouveau fichier enregistré sur le disque et appliqué avec succès !")
+    # Sécurisation par mot de passe
+    if "authentifie" not in st.session_state:
+        st.session_state.authentifie = False
+        
+    if not st.session_state.authentifie:
+        with st.form("form_auth"):
+            mdp_saisi = st.text_input("Veuillez saisir le mot de passe pour accéder à cet espace :", type="password")
+            valider_auth = st.form_submit_button("Se connecter")
+            if valider_auth:
+                if mdp_saisi == MOT_DE_PASSE_EDITEUR:
+                    st.session_state.authentifie = True
                     st.rerun()
-            else:
-                st.error("⚠️ Erreur : Le fichier doit contenir une colonne nommée 'Revue'.")
-        except Exception as e:
-            st.error(f"⚠️ Erreur de lecture : {e}")
-
-    # Zone d'édition en direct
-    if st.session_state.df_revues is not None:
+                else:
+                    st.error("🔑 Mot de passe incorrect.")
+    else:
+        # Bouton de déconnexion discret
+        if st.button("🔒 Se déconnecter de l'espace Éditeur"):
+            st.session_state.authentifie = False
+            st.rerun()
+            
         st.markdown("---")
-        st.subheader("2. Modifier et Sauvegarder en direct")
+
+        if st.session_state.df_revues is not None:
+            df_edition = st.session_state.df_revues
+            liste_sections = list(df_edition.columns)
+            
+            # --- SECTION 1 : MODIFIER ET SAUVEGARDER EN DIRECT ---
+            st.subheader("1. Modifier et Sauvegarder en direct")
+            
+            mode_modification = st.radio(
+                "Périmètre de la modification :",
+                ["Pour une seule revue", "Pour l'ensemble des revues"],
+                horizontal=True
+            )
+            
+            # CAS 1 : MODIFICATION UNIQUE
+            if mode_modification == "Pour une seule revue":
+                revue_a_modifier = st.selectbox("Sélectionner la revue à éditer :", df_edition.index)
+                
+                with st.form("form_mono_revue"):
+                    st.write(f"✍️ Modifications pour la revue : **{revue_a_modifier}**")
+                    nouveaux_contenus = {}
+                    
+                    for section in liste_sections:
+                        valeur_actuelle = str(df_edition.loc[revue_a_modifier, section])
+                        if valeur_actuelle == "nan" or valeur_actuelle == "/":
+                            valeur_actuelle = ""
+                        
+                        nouveaux_contenus[section] = st.text_area(f"Section : {section}", value=valeur_actuelle)
+                    
+                    soumettre = st.form_submit_button("💾 Enregistrer et appliquer définitivement")
+                    if soumettre:
+                        for section, nv_texte in nouveaux_contenus.items():
+                            st.session_state.df_revues.loc[revue_a_modifier, section] = nv_texte if nv_texte.strip() != "" else "/"
+                        if sauvegarder_sur_disque(st.session_state.df_revues):
+                            st.toast(f"Fichier Excel mis à jour pour {revue_a_modifier} !", icon="💾")
+                            st.rerun()
+
+            # CAS 2 : MODIFICATION GLOBALE
+            else:
+                section_a_modifier = st.selectbox("Sélectionner la section à harmoniser partout :", liste_sections)
+                premiere_revue_nom = df_edition.index[0] if len(df_edition.index) > 0 else "Aucune"
+                valeur_premiere_revue = str(df_edition.iloc[0][section_a_modifier]) if len(df_edition.index) > 0 else ""
+                
+                if valeur_premiere_revue == "nan" or valeur_premiere_revue == "/":
+                    valeur_premiere_revue = ""
+                
+                with st.form("form_global_revue"):
+                    st.write(f"🚨 Vous allez écraser la section **{section_a_modifier}** pour **toutes** les revues.")
+                    st.caption(f"💡 Champ pré-rempli avec le texte actuel de la première revue : *{premiere_revue_nom}*.")
+                    
+                    texte_global = st.text_area("Nouveau texte commun à appliquer partout :", value=valeur_premiere_revue)
+                    soumettre_global = st.form_submit_button("⚠️ Écraser et Sauvegarder partout")
+                    if soumettre_global:
+                        st.session_state.df_revues[section_a_modifier] = texte_global if texte_global.strip() != "" else "/"
+                        if sauvegarder_sur_disque(st.session_state.df_revues):
+                            st.toast("Fichier Excel global mis à jour !", icon="💾")
+                            st.rerun()
+            # --- SECTION 2 : STRUCTURE (AJOUTER REVUE / SECTION) ---
+            st.markdown("---")
+            st.subheader("2. Structurer la base de données")
+            
+            col_revue, col_section = st.columns(2)
+            
+            with col_revue:
+                with st.form("form_ajouter_revue"):
+                    st.write("➕ **Ajouter une nouvelle revue**")
+                    nouvelle_revue_nom = st.text_input("Nom de la nouvelle revue :")
+                    soumettre_nouvelle_revue = st.form_submit_button("Créer la revue")
+                    if soumettre_nouvelle_revue and nouvelle_revue_nom.strip() != "":
+                        nom_propre = nouvelle_revue_nom.strip()
+                        if nom_propre in st.session_state.df_revues.index:
+                            st.error("⚠️ Cette revue existe déjà.")
+                        else:
+                            st.session_state.df_revues.loc[nom_propre] = ["/"] * len(liste_sections)
+                            if sauvegarder_sur_disque(st.session_state.df_revues):
+                                st.success(f"Revue '{nom_propre}' créée ! Vous pouvez l'éditer ci-dessus.")
+                                st.rerun()
+                                
+            with col_section:
+                with st.form("form_ajouter_section"):
+                    st.write("📂 **Ajouter une nouvelle section**")
+                    nouvelle_section_nom = st.text_input("Nom de la nouvelle section (ex: 'Police de titre') :")
+                    soumettre_nouvelle_section = st.form_submit_button("Créer la section")
+                    if soumettre_nouvelle_section and nouvelle_section_nom.strip() != "":
+                        sec_propre = nouvelle_section_nom.strip()
+                        if sec_propre in st.session_state.df_revues.columns:
+                            st.error("⚠️ Cette section existe déjà.")
+                        else:
+                            st.session_state.df_revues[sec_propre] = "/"
+                            if sauvegarder_sur_disque(st.session_state.df_revues):
+                                st.success(f"Section '{sec_propre}' ajoutée à toutes les revues !")
+                                st.rerun()
+
+        # --- SECTION 3 : GESTION DE LA BASE DE DONNÉES (DÉPLACÉE EN BAS) ---
+        st.markdown("---")
+        st.subheader("3. Gestion de la base de données (Fichier complet)")
+        st.success("📊 La base de données 'revues.xlsx' est active et connectée au serveur.")
         
-        df_edition = st.session_state.df_revues
-        liste_sections = list(df_edition.columns)
-        
-        mode_modification = st.radio(
-            "Périmètre de la modification :",
-            ["Pour une seule revue", "Pour l'ensemble des revues"],
-            horizontal=True
+        fichier_charge = st.file_uploader(
+            "Remplacer complètement la base de données actuelle par un nouveau fichier Excel complet", 
+            type=["xlsx"],
+            key="uploader_excel"
         )
         
-        # CAS 1 : MODIFICATION UNIQUE
-        if mode_modification == "Pour une seule revue":
-            revue_a_modifier = st.selectbox("Sélectionner la revue à éditer :", df_edition.index)
-            
-            with st.form("form_mono_revue"):
-                st.write(f"✍️ Modifications pour la revue : **{revue_a_modifier}**")
-                nouveaux_contenus = {}
-                
-                for section in liste_sections:
-                    valeur_actuelle = str(df_edition.loc[revue_a_modifier, section])
-                    if valeur_actuelle == "nan" or valeur_actuelle == "/":
-                        valeur_actuelle = ""
-                    
-                    nouveaux_contenus[section] = st.text_area(f"Section : {section}", value=valeur_actuelle)
-                
-                soumettre = st.form_submit_button("💾 Enregistrer et appliquer définitivement")
-                if soumettre:
-                    # Mise à jour en mémoire
-                    for section, nv_texte in nouveaux_contenus.items():
-                        st.session_state.df_revues.loc[revue_a_modifier, section] = nv_texte if nv_texte.strip() != "" else "/"
-                    
-                    # Sauvegarde automatique dans le fichier Excel physique
-                    if sauvegarder_sur_disque(st.session_state.df_revues):
-                        st.toast(f"Fichier Excel mis à jour pour {revue_a_modifier} !", icon="💾")
+        if fichier_charge is not None:
+            try:
+                df_nouveau = pd.read_excel(fichier_charge)
+                if "Revue" in df_nouveau.columns:
+                    new_df = df_nouveau.set_index("Revue")
+                    if sauvegarder_sur_disque(new_df):
+                        st.session_state.df_revues = new_df
+                        st.success("✅ Nouveau fichier enregistré sur le disque !")
                         st.rerun()
-
-        # CAS 2 : MODIFICATION GLOBALE
-        else:
-            section_a_modifier = st.selectbox("Sélectionner la section à harmoniser partout :", liste_sections)
-            
-            premiere_revue_nom = df_edition.index
-            valeur_premiere_revue = str(df_edition.iloc[section_a_modifier])
-            
-            if valeur_premiere_revue == "nan" or valeur_premiere_revue == "/":
-                valeur_premiere_revue = ""
-            
-            with st.form("form_global_revue"):
-                st.write(f"🚨 Vous allez écraser la section **{section_a_modifier}** pour **toutes** les revues.")
-                st.caption(f"💡 Champ pré-rempli avec le texte actuel de la première revue : *{premiere_revue_nom}*.")
-                
-                texte_global = st.text_area(
-                    "Nouveau texte commun à appliquer partout :", 
-                    value=valeur_premiere_revue
-                )
-                
-                soumettre_global = st.form_submit_button("⚠️ Écraser et Sauvegarder partout")
-                if soumettre_global:
-                    # Mise à jour en mémoire
-                    st.session_state.df_revues[section_a_modifier] = texte_global if texte_global.strip() != "" else "/"
-                    
-                    # Sauvegarde automatique dans le fichier Excel physique
-                    if sauvegarder_sur_disque(st.session_state.df_revues):
-                        st.toast("Fichier Excel global mis à jour !", icon="💾")
-                        st.rerun()
+                else:
+                    st.error("⚠️ Erreur : Le fichier doit contenir une colonne nommée 'Revue'.")
+            except Exception as e:
+                st.error(f"⚠️ Erreur de lecture : {e}")
 
 # ==========================================
 # 2. POINT D'ENTRÉE : COMPOSITEURS
