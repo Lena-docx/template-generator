@@ -194,24 +194,22 @@ with tab_editeurs:
                         st.toast(T["save_success"], icon="💾")
                         st.rerun()
             else:
-    lbl_select_sec = "Sélectionner la section à harmoniser partout :" if st.session_state.langue == "Français" else "Select the section to standardize everywhere:"
-    section_a_modifier = st.selectbox(lbl_select_sec, liste_sections)
-    
-    # --- CORRECTION ICI : On prend le premier élément de l'index [0] ---
-    if len(df_edition.index) > 0:
-        premiere_revue_nom = df_edition.index[0]
-        valeur_premiere_revue = str(df_edition.at[premiere_revue_nom, section_a_modifier])
-    else:
-        premiere_revue_nom = "Aucune"
-        valeur_premiere_revue = ""
-        
-    if valeur_premiere_revue == "nan" or valeur_premiere_revue == "/":
-        valeur_premiere_revue = ""
-    
-    with st.form("form_global_revue"):
-        txt_alerte = f"🚨 Vous allez écraser la section **{section_a_modifier}** pour **toutes** les revues." if st.session_state.langue == "Français" else f"🚨 You are about to overwrite the **{section_a_modifier}** section for **all** journals."
-        txt_caption = f"💡 Champ pré-rempli avec le texte actuel de : *{premiere_revue_nom}*." if st.session_state.langue == "Français" else f"💡 Field pre-filled with current text from: *{premiere_revue_nom}*."
-
+                lbl_select_sec = "Sélectionner la section à harmoniser partout :" if st.session_state.langue == "Français" else "Select the section to standardize everywhere:"
+                section_a_modifier = st.selectbox(lbl_select_sec, liste_sections)
+                
+                if len(df_edition.index) > 0:
+                    premiere_revue_nom = df_edition.index[0]
+                    valeur_premiere_revue = str(df_edition.at[premiere_revue_nom, section_a_modifier])
+                else:
+                    premiere_revue_nom = "Aucune"
+                    valeur_premiere_revue = ""
+                    
+                if valeur_premiere_revue == "nan" or valeur_premiere_revue == "/":
+                    valeur_premiere_revue = ""
+                
+                with st.form("form_global_revue"):
+                    txt_alerte = f"🚨 Vous allez écraser la section **{section_a_modifier}** pour **toutes** les revues." if st.session_state.langue == "Français" else f"🚨 You are about to overwrite the **{section_a_modifier}** section for **all** journals."
+                    txt_caption = f"💡 Champ pré-rempli avec le texte actuel de : *{premiere_revue_nom}*." if st.session_state.langue == "Français" else f"💡 Field pre-filled with current text from: *{premiere_revue_nom}*."
                     lbl_text_area = "Nouveau texte commun :" if st.session_state.langue == "Français" else "New common text:"
                     btn_global = "⚠️ Écraser et Sauvegarder sur tout le catalogue" if st.session_state.langue == "Français" else "⚠️ Overwrite and Save across catalog"
                     st.write(txt_alerte)
