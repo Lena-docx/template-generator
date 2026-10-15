@@ -38,7 +38,10 @@ TRAD = {
         "btn_word": "📄 Télécharger au format Word (.docx)",
         "msg_attente": "ℹ️ L'application est prête. Veuillez vous connecter à l'espace Éditeur pour y charger votre fichier Excel d'origine.",
         "save_success": "Base locale mise à jour !",
-        "save_btn": "💾 Enregistrer et appliquer définitivement"
+        "save_btn": "💾 Enregistrer et appliquer définitivement",
+        "filtre_domaine": "Filtrer par Domaine :",
+        "filtre_modele": "Filtrer par Modèle économique :",
+        "tous": "-- Tous --"
     },
     "English": {
         "titre_app": "Layout Instructions",
@@ -55,7 +58,10 @@ TRAD = {
         "btn_word": "📄 Download in Word format (.docx)",
         "msg_attente": "ℹ️ The app is ready. Please log into the Editor workspace to upload your original Excel file.",
         "save_success": "Local database updated!",
-        "save_btn": "💾 Save changes permanently"
+        "save_btn": "💾 Save changes permanently",
+        "filtre_domaine": "Filter by Domain:",
+        "filtre_modele": "Filter by Economic Model:",
+        "tous": "-- All --"
     }
 }
 
@@ -64,7 +70,6 @@ st.title(T["titre_app"])
 
 MOT_DE_PASSE_EDITEUR = "Editeur2026"
 DB_NOM = "revues.db"
-
 def initialiser_sqlite():
     """Crée la table SQLite locale au premier démarrage si elle n'existe pas"""
     conn = sqlite3.connect(DB_NOM)
@@ -333,12 +338,44 @@ with tab_compositeurs:
         st.info(T["msg_attente"])
     else:
         df_revues = st.session_state.df_revues
+        
+        # --- BLOC DE FILTRAGE PAR DOMAINE ET MODÈLE ---
+        col_f1, col_f2 = st.columns(2)
+        
+        # Récupération et nettoyage des options uniques pour le Domaine
+        options_domaine = [T["tous"]]
+        if "Domaine" in df_revues.columns:
+            valeurs_domaine = df_revues["Domaine"].dropna().unique()
+            valeurs_domaine = [str(v).strip() for v in valeurs_domaine if str(v).strip() not in ["", "/"]]
+            options_domaine.extend(sorted(valeurs_domaine))
+            
+        with col_f1:
+            domaine_selectionne = st.selectbox(T["filtre_domaine"], options_domaine)
+            
+        # Récupération et nettoyage des options uniques pour le Modèle Économique
+        options_modele = [T["tous"]]
+        if "Modèle économique" in df_revues.columns:
+            valeurs_modele = df_revues["Modèle économique"].dropna().unique()
+            valeurs_modele = [str(v).strip() for v in valeurs_modele if str(v).strip() not in ["", "/"]]
+            options_modele.extend(sorted(valeurs_modele))
+            
+        with col_f2:
+            modele_selectionne = st.selectbox(T["filtre_modele"], options_modele)
+            
+        # Application dynamique des filtres sur le DataFrame utilisé pour la sélection
+        df_filtre = df_revues.copy()
+        if domaine_selectionne != T["tous"] and "Domaine" in df_filtre.columns:
+            df_filtre = df_filtre[df_filtre["Domaine"].astype(str).str.strip() == domaine_selectionne]
+        if modele_selectionne != T["tous"] and "Modèle économique" in df_filtre.columns:
+            df_filtre = df_filtre[df_filtre["Modèle économique"].astype(str).str.strip() == modele_selectionne]
+        # ---------------------------------------------
+
         choix = st.selectbox(
             T["choix_revue"], 
-            [T["choix_defaut"]] + list(df_revues.index),
+            [T["choix_defaut"]] + list(df_filtre.index),
             key="select_compositeur"
         )
-        if choix != T["choix_defaut"]:
+        if choix != T["choix_defaut"] and choix in df_revues.index:
             instructions_revue = df_revues.loc[choix]
             fichier_word = generer_document_word(choix, instructions_revue)
             st.download_button(
