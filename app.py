@@ -72,6 +72,7 @@ st.title(T["titre_app"])
 
 MOT_DE_PASSE_EDITEUR = "Editeur2026"
 DB_NOM = "revues.db"
+
 def initialiser_sqlite():
     conn = sqlite3.connect(DB_NOM)
     cursor = conn.cursor()
@@ -175,6 +176,7 @@ def appliquer_filtres_dynamiques(df_source, key_prefix):
 
 st.session_state.df_revues = charger_donnees_sqlite()
 tab_editeurs, tab_compositeurs = st.tabs([T["tab_editeurs"], T["tab_compositeurs"]])
+
 with tab_editeurs:
     st.header(T["titre_editeur"])
     
@@ -267,6 +269,7 @@ with tab_editeurs:
                             sauvegarder_revue_sqlite(nom_revue, dict_actuel)
                         st.toast(T["save_success"], icon="💾")
                         st.rerun()
+
             lbl_struct_titre = "2. Structurer la base de données" if st.session_state.langue == "Français" else "2. Database Structure"
             st.markdown("---")
             st.subheader(lbl_struct_titre)
@@ -348,7 +351,6 @@ with tab_editeurs:
         if fichier_charge is not None and not st.session_state.import_deja_fait:
             try:
                 df_nouveau = pd.read_excel(fichier_charge)
-                # ADAPTATION AU TERME ANGLAIS "Journal"
                 if "Journal" in df_nouveau.columns:
                     conn_clear = sqlite3.connect(DB_NOM)
                     conn_clear.execute("DELETE FROM instructions;")
@@ -359,7 +361,7 @@ with tab_editeurs:
                         dict_revue = {}
                         for col in df_nouveau.columns:
                             if col != "Journal":
-                                dict_revue[str(col).strip()] = str(row[col]).strip() if pd.notna(row[col]) else "/"
+                                dict_revue[str(col).strip()] = str(row[col]) if pd.notna(row[col]) else "/"
                         sauvegarder_revue_sqlite(nom_revue, dict_revue)
                     st.session_state.import_deja_fait = True
                     st.session_state.df_revues = charger_donnees_sqlite()
@@ -369,6 +371,7 @@ with tab_editeurs:
                     st.error("⚠️ Colonne 'Journal' manquante." if st.session_state.langue == "Français" else "⚠️ Missing 'Journal' column.")
             except Exception as e:
                 st.error(f"⚠️ Erreur : {e}")
+
 with tab_compositeurs:
     st.header(T["titre_compositeur"])
     
@@ -398,4 +401,8 @@ with tab_compositeurs:
             for section, contenu in instructions_revue.items():
                 if pd.notna(contenu) and str(contenu).strip() not in ["", "/"]:
                     st.subheader(str(section))
-                    st.write(str(contenu).strip())
+                    
+                    # LOGIQUE DE CONVERSION ET RESPECT DES SAUTS DE LIGNE EXCEL À L'ÉCRAN
+                    texte_propre = str(contenu).strip()
+                    texte_html = texte_propre.replace("\n", "<br>")
+                    st.markdown(f'<div style="text-align: justify;">{texte_html}</div>', unsafe_allow_html=True)
