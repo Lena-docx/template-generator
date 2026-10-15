@@ -33,15 +33,16 @@ TRAD = {
         "auth_btn": "Se connecter",
         "auth_err": "🔑 Mot de passe incorrect.",
         "logout_btn": "🔒 Se déconnecter de l'espace Éditeur",
-        "choix_revue": "Choisir ou chercher une revue :",
-        "choix_defaut": "-- Sélectionnez une revue --",
+        "choix_revue": "Choisir ou chercher un journal :",
+        "choix_defaut": "-- Sélectionnez un journal --",
         "btn_word": "📄 Télécharger au format Word (.docx)",
         "msg_attente": "ℹ️ L'application est prête. Veuillez vous connecter à l'espace Éditeur pour y charger votre fichier Excel d'origine.",
         "save_success": "Base locale mise à jour !",
         "save_btn": "💾 Enregistrer et appliquer définitivement",
-        "filtre_domaine": "Filtrer par Domaine :",
-        "filtre_modele": "Filtrer par Modèle économique :",
-        "tous": "-- Tous --"
+        "filtre_domaine": "Filtrer par Domaine (Domain) :",
+        "filtre_modele": "Filtrer par Modèle économique (Economic model) :",
+        "tous": "-- Tous / All --",
+        "colonne_manquante": "⚠️ La section '{col}' n'existe pas encore dans la base. Importez le nouvel Excel pour l'activer automatiquement."
     },
     "English": {
         "titre_app": "Layout Instructions",
@@ -61,7 +62,8 @@ TRAD = {
         "save_btn": "💾 Save changes permanently",
         "filtre_domaine": "Filter by Domain:",
         "filtre_modele": "Filter by Economic Model:",
-        "tous": "-- All --"
+        "tous": "-- All --",
+        "colonne_manquante": "⚠️ The '{col}' section does not exist in the database yet. Upload the new Excel file to activate it."
     }
 }
 
@@ -71,7 +73,6 @@ st.title(T["titre_app"])
 MOT_DE_PASSE_EDITEUR = "Editeur2026"
 DB_NOM = "revues.db"
 def initialiser_sqlite():
-    """Crée la table SQLite locale au premier démarrage si elle n'existe pas"""
     conn = sqlite3.connect(DB_NOM)
     cursor = conn.cursor()
     cursor.execute("""
@@ -86,7 +87,6 @@ def initialiser_sqlite():
 initialiser_sqlite()
 
 def charger_donnees_sqlite():
-    """Lit les données de SQLite et reconstruit un DataFrame Pandas propre"""
     conn = sqlite3.connect(DB_NOM)
     try:
         df_sql = pd.read_sql_query("SELECT * FROM instructions", conn)
@@ -96,17 +96,16 @@ def charger_donnees_sqlite():
         liste_dictionnaires = []
         for _, row in df_sql.iterrows():
             dict_revue = json.loads(row["donnees_json"])
-            dict_revue["Revue"] = row["revue"]
+            dict_revue["Journal"] = row["revue"]
             liste_dictionnaires.append(dict_revue)
         df_final = pd.DataFrame(liste_dictionnaires)
-        return df_final.set_index("Revue")
+        return df_final.set_index("Journal")
     except Exception:
         if 'conn' in locals():
             conn.close()
         return None
 
 def sauvegarder_revue_sqlite(nom_revue, dictionnaire_sections):
-    """Sauvegarde ou met à jour une revue et ses consignes en format JSON structuré"""
     conn = sqlite3.connect(DB_NOM)
     cursor = conn.cursor()
     json_consignes = json.dumps(dictionnaire_sections)
@@ -119,7 +118,6 @@ def sauvegarder_revue_sqlite(nom_revue, dictionnaire_sections):
     conn.close()
 
 def supprimer_revue_sqlite(nom_revue):
-    """Supprime définitivement une revue de la base de données"""
     conn = sqlite3.connect(DB_NOM)
     cursor = conn.cursor()
     cursor.execute("DELETE FROM instructions WHERE revue = ?;", (nom_revue,))
@@ -137,6 +135,43 @@ def generer_document_word(nom_revue, données_instructions):
     doc.save(output)
     output.seek(0)
     return output
+
+def appliquer_filtres_dynamiques(df_source, key_prefix):
+    """Affiche les sélecteurs et filtre le DataFrame selon Domain et Economic model"""
+    col_f1, col_f2 = st.columns(2)
+    
+    # 1. Gestion du filtre Domain
+    options_domaine = [T["tous"]]
+    if "Domain" in df_source.columns:
+        valeurs_domaine = df_source["Domain"].dropna().unique()
+        valeurs_domaine = [str(v).strip() for v in valeurs_domaine if str(v).strip() not in ["", "/"]]
+        options_domaine.extend(sorted(valeurs_domaine))
+    else:
+        st.warning(T["colonne_manquante"].format(col="Domain"))
+        
+    with col_f1:
+        domaine_sel = st.selectbox(T["filtre_domaine"], options_domaine, key=f"{key_prefix}_domain")
+        
+    # 2. Gestion du filtre Economic model
+    options_modele = [T["tous"]]
+    if "Economic model" in df_source.columns:
+        valeurs_modele = df_source["Economic model"].dropna().unique()
+        valeurs_modele = [str(v).strip() for v in valeurs_modele if str(v).strip() not in ["", "/"]]
+        options_modele.extend(sorted(valeurs_modele))
+    else:
+        st.warning(T["colonne_manquante"].format(col="Economic model"))
+        
+    with col_f2:
+        modele_sel = st.selectbox(T["filtre_modele"], options_modele, key=f"{key_prefix}_economic_model")
+        
+    # Application des filtres sur la copie du DataFrame
+    df_filtre = df_source.copy()
+    if domaine_sel != T["tous"] and "Domain" in df_filtre.columns:
+        df_filtre = df_filtre[df_filtre["Domain"].astype(str).str.strip() == domaine_sel]
+    if modele_sel != T["tous"] and "Economic model" in df_filtre.columns:
+        df_filtre = df_filtre[df_filtre["Economic model"].astype(str).str.strip() == modele_sel]
+        
+    return df_filtre
 
 st.session_state.df_revues = charger_donnees_sqlite()
 tab_editeurs, tab_compositeurs = st.tabs([T["tab_editeurs"], T["tab_compositeurs"]])
@@ -168,7 +203,7 @@ with tab_editeurs:
             liste_sections = list(df_edition.columns)
             
             lbl_modif_titre = "1. Modifier et Sauvegarder en direct" if st.session_state.langue == "Français" else "1. Edit and Save Live"
-            lbl_radio = ["Pour une seule revue", "Pour l'ensemble des revues"] if st.session_state.langue == "Français" else ["For a single journal", "For all journals"]
+            lbl_radio = ["Pour un seul journal", "Pour l'ensemble des journaux"] if st.session_state.langue == "Français" else ["For a single journal", "For all journals"]
             
             st.subheader(lbl_modif_titre)
             mode_modification = st.radio(
@@ -177,9 +212,12 @@ with tab_editeurs:
                 horizontal=True
             )
             
-            if mode_modification in ["Pour une seule revue", "For a single journal"]:
-                lbl_select_rev = "Sélectionner la revue à éditer :" if st.session_state.langue == "Français" else "Select the journal to edit:"
-                revue_a_modifier = st.selectbox(lbl_select_rev, df_edition.index)
+            if mode_modification in ["Pour un seul journal", "For a single journal"]:
+                st.markdown("##### 🔍 Filtrer le catalogue d'édition")
+                df_edition_filtree = appliquer_filtres_dynamiques(df_edition, key_prefix="editeur")
+                
+                lbl_select_rev = "Sélectionner le journal à éditer :" if st.session_state.langue == "Français" else "Select the journal to edit:"
+                revue_a_modifier = st.selectbox(lbl_select_rev, df_edition_filtree.index)
                 
                 with st.form("form_mono_revue"):
                     st.write(f"✍️ Modifications : **{revue_a_modifier}**")
@@ -213,7 +251,7 @@ with tab_editeurs:
                     valeur_premiere_revue = ""
                 
                 with st.form("form_global_revue"):
-                    txt_alerte = f"🚨 Vous allez écraser la section **{section_a_modifier}** pour **toutes** les revues." if st.session_state.langue == "Français" else f"🚨 You are about to overwrite the **{section_a_modifier}** section for **all** journals."
+                    txt_alerte = f"🚨 Vous allez écraser la section **{section_a_modifier}** pour **tous** les journaux." if st.session_state.langue == "Français" else f"🚨 You are about to overwrite the **{section_a_modifier}** section for **all** journals."
                     txt_caption = f"💡 Champ pré-rempli avec le texte actuel de : *{premiere_revue_nom}*." if st.session_state.langue == "Français" else f"💡 Field pre-filled with current text from: *{premiere_revue_nom}*."
                     lbl_text_area = "Nouveau texte commun :" if st.session_state.langue == "Français" else "New common text:"
                     btn_global = "⚠️ Écraser et Sauvegarder sur tout le catalogue" if st.session_state.langue == "Français" else "⚠️ Overwrite and Save across catalog"
@@ -237,9 +275,9 @@ with tab_editeurs:
             col_revue, col_section = st.columns(2)
             with col_revue:
                 with st.form("form_ajouter_revue"):
-                    st.write("**" + ("Ajouter une nouvelle revue" if st.session_state.langue == "Français" else "Add a new journal") + "**")
-                    nouvelle_revue_nom = st.text_input("Nom de la nouvelle revue :" if st.session_state.langue == "Français" else "New journal name:")
-                    if st.form_submit_button("Créer la revue" if st.session_state.langue == "Français" else "Create journal") and nouvelle_revue_nom.strip() != "":
+                    st.write("**" + ("Ajouter un nouveau journal" if st.session_state.langue == "Français" else "Add a new journal") + "**")
+                    nouvelle_revue_nom = st.text_input("Nom du nouveau journal :" if st.session_state.langue == "Français" else "New journal name:")
+                    if st.form_submit_button("Créer l'entrée" if st.session_state.langue == "Français" else "Create entry") and nouvelle_revue_nom.strip() != "":
                         nom_propre = nouvelle_revue_nom.strip()
                         if nom_propre in st.session_state.df_revues.index:
                             st.error("⚠️ Existe déjà." if st.session_state.langue == "Français" else "⚠️ Already exists.")
@@ -266,8 +304,8 @@ with tab_editeurs:
             col_del_revue, col_del_section = st.columns(2)
             with col_del_revue:
                 with st.form("form_supprimer_revue"):
-                    st.write("**" + ("Supprimer une revue" if st.session_state.langue == "Français" else "Delete a journal") + "**")
-                    revue_a_supprimer = st.selectbox("Revue à détruire :" if st.session_state.langue == "Français" else "Journal to destroy:", ["-- Sélectionner/Select --"] + list(df_edition.index))
+                    st.write("**" + ("Supprimer un journal" if st.session_state.langue == "Français" else "Delete a journal") + "**")
+                    revue_a_supprimer = st.selectbox("Journal à détruire :" if st.session_state.langue == "Français" else "Journal to destroy:", ["-- Sélectionner/Select --"] + list(df_edition.index))
                     if st.form_submit_button("💥 Supprimer" if st.session_state.langue == "Français" else "💥 Delete") and revue_a_supprimer != "-- Sélectionner/Select --":
                         supprimer_revue_sqlite(revue_a_supprimer)
                         st.rerun()
@@ -288,7 +326,7 @@ with tab_editeurs:
         st.subheader(lbl_imp_titre)
 
         if st.session_state.df_revues is not None:
-            lbl_exp_desc = "📥 **Sauvegarde :** Téléchargez la version actuelle de la base de données contenant toutes vos modifications récentes au format Excel :" if st.session_state.langue == "Français" else "📥 **Backup:** Download the current database containing all your recent modifications as an Excel file:"
+            lbl_exp_desc = "📥 **Sauvegarde :** Téléchargez la version actuelle de la base de données au format Excel :" if st.session_state.langue == "Français" else "📥 **Backup:** Download the current database as an Excel file:"
             st.write(lbl_exp_desc)
             output_excel = BytesIO()
             st.session_state.df_revues.reset_index().to_excel(output_excel, index=False)
@@ -299,9 +337,8 @@ with tab_editeurs:
                 file_name="base_revues_mise_a_jour.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-            st.markdown("")
 
-        lbl_imp_desc = "📤 **Remplacement :** Déposez un fichier Excel complet pour pré-remplir ou écraser l'intégralité de la base de données." if st.session_state.langue == "Français" else "📤 **Replacement:** Upload a complete Excel file to pre-fill or overwrite the entire database."
+        lbl_imp_desc = "📤 **Remplacement :** Déposez votre nouveau fichier Excel pour écraser l'intégralité de la base de données." if st.session_state.langue == "Français" else "📤 **Replacement:** Upload your new Excel file to overwrite the entire database."
         st.write(lbl_imp_desc)
         if "import_deja_fait" not in st.session_state:
             st.session_state.import_deja_fait = False
@@ -311,16 +348,17 @@ with tab_editeurs:
         if fichier_charge is not None and not st.session_state.import_deja_fait:
             try:
                 df_nouveau = pd.read_excel(fichier_charge)
-                if "Revue" in df_nouveau.columns:
+                # ADAPTATION AU TERME ANGLAIS "Journal"
+                if "Journal" in df_nouveau.columns:
                     conn_clear = sqlite3.connect(DB_NOM)
                     conn_clear.execute("DELETE FROM instructions;")
                     conn_clear.commit()
                     conn_clear.close()
                     for _, row in df_nouveau.iterrows():
-                        nom_revue = str(row["Revue"]).strip()
+                        nom_revue = str(row["Journal"]).strip()
                         dict_revue = {}
                         for col in df_nouveau.columns:
-                            if col != "Revue":
+                            if col != "Journal":
                                 dict_revue[str(col).strip()] = str(row[col]).strip() if pd.notna(row[col]) else "/"
                         sauvegarder_revue_sqlite(nom_revue, dict_revue)
                     st.session_state.import_deja_fait = True
@@ -328,7 +366,7 @@ with tab_editeurs:
                     st.success("✅ Succès !" if st.session_state.langue == "Français" else "✅ Success!")
                     st.rerun()
                 else:
-                    st.error("⚠️ Colonne 'Revue' manquante." if st.session_state.langue == "Français" else "⚠️ Missing 'Revue' column.")
+                    st.error("⚠️ Colonne 'Journal' manquante." if st.session_state.langue == "Français" else "⚠️ Missing 'Journal' column.")
             except Exception as e:
                 st.error(f"⚠️ Erreur : {e}")
 with tab_compositeurs:
@@ -339,40 +377,12 @@ with tab_compositeurs:
     else:
         df_revues = st.session_state.df_revues
         
-        # --- BLOC DE FILTRAGE PAR DOMAINE ET MODÈLE ---
-        col_f1, col_f2 = st.columns(2)
-        
-        # Récupération et nettoyage des options uniques pour le Domaine
-        options_domaine = [T["tous"]]
-        if "Domaine" in df_revues.columns:
-            valeurs_domaine = df_revues["Domaine"].dropna().unique()
-            valeurs_domaine = [str(v).strip() for v in valeurs_domaine if str(v).strip() not in ["", "/"]]
-            options_domaine.extend(sorted(valeurs_domaine))
-            
-        with col_f1:
-            domaine_selectionne = st.selectbox(T["filtre_domaine"], options_domaine)
-            
-        # Récupération et nettoyage des options uniques pour le Modèle Économique
-        options_modele = [T["tous"]]
-        if "Modèle économique" in df_revues.columns:
-            valeurs_modele = df_revues["Modèle économique"].dropna().unique()
-            valeurs_modele = [str(v).strip() for v in valeurs_modele if str(v).strip() not in ["", "/"]]
-            options_modele.extend(sorted(valeurs_modele))
-            
-        with col_f2:
-            modele_selectionne = st.selectbox(T["filtre_modele"], options_modele)
-            
-        # Application dynamique des filtres sur le DataFrame utilisé pour la sélection
-        df_filtre = df_revues.copy()
-        if domaine_selectionne != T["tous"] and "Domaine" in df_filtre.columns:
-            df_filtre = df_filtre[df_filtre["Domaine"].astype(str).str.strip() == domaine_selectionne]
-        if modele_selectionne != T["tous"] and "Modèle économique" in df_filtre.columns:
-            df_filtre = df_filtre[df_filtre["Modèle économique"].astype(str).str.strip() == modele_selectionne]
-        # ---------------------------------------------
+        st.markdown("##### 🔍 Filtrer le catalogue de consultation")
+        df_compositeur_filtre = appliquer_filtres_dynamiques(df_revues, key_prefix="compositeur")
 
         choix = st.selectbox(
             T["choix_revue"], 
-            [T["choix_defaut"]] + list(df_filtre.index),
+            [T["choix_defaut"]] + list(df_compositeur_filtre.index),
             key="select_compositeur"
         )
         if choix != T["choix_defaut"] and choix in df_revues.index:
